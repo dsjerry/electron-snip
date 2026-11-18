@@ -1,0 +1,153 @@
+import { desktopCapturer, screen } from 'electron';
+import type { Display, DesktopCapturerSource } from 'electron';
+import type { DisplayShot, Rect } from '../shared/types';
+import { log } from './log';
+
+function toUint8(buf: Buffer): Uint8Array {
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+}
+
+/**
+ * `NativeImage.toBitmap()` 给的是 BGRA，`ImageData` 要 RGBA —— 原地交换 B/R。
+ * 位图是刚分配的私有 Buffer，原地改没有副作用；截图不透明，无需处理 alpha。
+ */
+function bgraToRgba(buf: Buffer): Uint8Array {
+  const px = toUint8(buf);
+  for (let i = 0; i < px.length; i += 4) {
+    const b = px[i];
+    px[i] = px[i + 2];
+    px[i + 2] = b;
+  }
+  return px;
+}
+
+/** 按请求尺寸分组：thumbnailSize 一次调用只有一个值，混合 DPI 不能共用一次。 */
+function groupByWant(displays: Display[]): Map<string, Display[]> {
+  const groups = new Map<string, Display[]>();
+  for (const d of displays) {
+    const want = wantSize(d);
+    const key = `${want.width}x${want.height}`;
+    const list = groups.get(key);
+    if (list) list.push(d);
+    else groups.set(key, [d]);
+  }
+  return groups;
+}
+
+function wantSize(d: Display): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.round(d.bounds.width * d.scaleFactor)),
+    height: Math.max(1, Math.round(d.bounds.height * d.scaleFactor)),
+  };
+}
+
+/**
+ * 在一次 getSources 的结果里找到某个显示器的 source。
+ * 优先 `display_id`，为空则退化成下标。
+ */
+function pickSource(
+  sources: DesktopCapturerSource[],
+  display: Display,
+  displays: Display[],
+): DesktopCapturerSource | null {
+  const byId = sources.find((s) => s.display_id === String(display.id));
+  if (byId) return byId;
+
+  if (sources.length !== displays.length) {
+    log.warn(`[capture] display_id 匹配失败且数量不一致：sources=${sources.length} displays=${displays.length}`);
+    return null;
+  }
+  const idx = displays.findIndex((d) => d.id === display.id);
+  log.warn(`[capture] display ${display.id} 的 display_id 为空，退化为下标 ${idx}`);
+  return sources[idx] ?? null;
+}
+
+/**
+ * 抓取指定的显示器。
+ *
+ * `targets` 可以是全部屏，也可以只有光标所在那一块 —— 分批抓屏时用得上。
+ * `display_id` 的下标回退始终对照**全部**显示器（sources 数量等于总屏数）。
+ *
+ * 关键点：
+ * - `thumbnailSize` **不保证**被遵守（Electron 文档原文），所以拿到之后
+ *   一律用 `thumbnail.getSize()` 回读，`scaleX/scaleY` 由实际尺寸反推；
+ * - 后续所有几何都用 `scaleX/scaleY`，绝不用 `display.scaleFactor`；
+ * - 必须在对应遮罩窗口存在**之前**调用，否则会把自己截进图里。
+ */
+export async function captureDisplays(targets: Display[], all: Display[], silent = false): Promise<DisplayShot[]> {
+  const groups = groupByWant(targets);
+  const shots: DisplayShot[] = [];
+
+  for (const [, group] of groups) {
+    const want = wantSize(group[0]);
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: want,
+      fetchWindowIcons: false,
+    });
+
+    for (const display of group) {
+      const source = pickSource(sources, display, all);
+      if (!source) {
+        throw new Error(`无法为显示器 ${display.id} 找到对应的截图源`);
+      }
+      const size = source.thumbnail.getSize();
+      const scaleX = size.width / display.bounds.width;
+      const scaleY = size.height / display.bounds.height;
+
+      if (!silent && Math.abs(scaleX - scaleY) > 0.02) {
+        log.warn(
+          `[capture] display ${display.id} 的 X/Y 比例偏差过大：` +
+            `scaleX=${scaleX.toFixed(4)} scaleY=${scaleY.toFixed(4)}`,
+        );
+      }
+      if (!silent) {
+        log.info(
+          `[capture] display=${display.id}` +
+            ` bounds=${display.bounds.x},${display.bounds.y} ${display.bounds.width}x${display.bounds.height}` +
+            ` scaleFactor=${display.scaleFactor}` +
+            ` want=${want.width}x${want.height}` +
+            ` actual=${size.width}x${size.height}` +
+            ` ratio=${scaleX.toFixed(4)}/${scaleY.toFixed(4)}` +
+            ` display_id="${source.display_id}"`,
+        );
+      }
+
+      // 原始位图代替 PNG：整屏 PNG 同步编码要一两百毫秒，这里是纯内存交换
+      const pixels = bgraToRgba(source.thumbnail.toBitmap());
+      if (pixels.length !== size.width * size.height * 4) {
+        throw new Error(`display ${display.id} 位图尺寸不符：${pixels.length} != ${size.width}x${size.height}x4`);
+      }
+
+      shots.push({
+        displayId: display.id,
+        bounds: { ...display.bounds } as Rect,
+        scaleX,
+        scaleY,
+        imageWidth: size.width,
+        imageHeight: size.height,
+        pixels,
+      });
+    }
+  }
+
+  if (shots.length !== targets.length) {
+    throw new Error(`截图数量与请求的显示器数量不一致：${shots.length} != ${targets.length}`);
+  }
+
+  return shots;
+}
+
+/** 当前光标所在的显示器（用于决定先抓哪一块屏）。 */
+export function displayAtCursor(displays: Display[]): Display {
+  const p = screen.getCursorScreenPoint();
+  return (
+    displays.find(
+      (d) =>
+        p.x >= d.bounds.x &&
+        p.x < d.bounds.x + d.bounds.width &&
+        p.y >= d.bounds.y &&
+        p.y < d.bounds.y + d.bounds.height,
+    ) ?? displays[0]
+  );
+}
