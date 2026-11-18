@@ -30,7 +30,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "smoke": "electron scripts/smoke-electron.cjs"
+    "smoke": "electron scripts/smoke-electron.cjs",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "electron": ">=43"
