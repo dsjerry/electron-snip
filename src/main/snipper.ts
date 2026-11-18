@@ -676,6 +676,7 @@ export function createSnipper(opts: SnipOptions): Snipper {
     const ctx: SnipActionContext = {
       selection: sel,
       shots: s.shots,
+      sourceApp: s.sourceApp,
       pickSingleDisplay: () => {
         const pick = bestRegionOnDisplay(s.shots, sel);
         return pick ? { shot: s.shots[pick.index], region: pick.region } : null;
@@ -1090,6 +1091,7 @@ export function createSnipper(opts: SnipOptions): Snipper {
   function cancel(reason = 'manual'): void {
     const s = session;
     if (s) log.info(`[snip] 取消截图 (${reason}) phase=${s.phase}`);
+    if (s) opts.onCancel?.(reason);
     session = null;
     if (readyTimer) {
       clearTimeout(readyTimer);
@@ -1151,6 +1153,8 @@ export function createSnipper(opts: SnipOptions): Snipper {
     start,
     cancel,
     pinImage,
+    closePins: () => pins.closeAll(),
+    setPinsMouseIgnore: (ignore: boolean) => pins.setIgnoreAll(ignore),
     install(target: IpcMain): () => void {
       // 屏幕变化（分辨率 / 拔插）时正在进行的截图无法再对齐，直接收场
       const onDisplayChange = () => {

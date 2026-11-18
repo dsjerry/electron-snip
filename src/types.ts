@@ -7,6 +7,8 @@ export interface SnipActionContext {
   /** 触发时的选区（虚拟屏 DIP） */
   readonly selection: Rect;
   readonly shots: DisplayShot[];
+  /** 截图开始时的前台应用名（拿不到则缺省） */
+  readonly sourceApp?: string;
   /** 选区与各屏的最大交集 —— 单屏内的录制 / 长图等动作需要它 */
   pickSingleDisplay(): { shot: DisplayShot; region: Rect } | null;
   /** 收起遮罩但保持会话（宿主接管后续流程时使用） */
@@ -49,6 +51,8 @@ export interface SnipOptions {
   onExport?(event: SnipExportEvent): boolean | void | Promise<boolean | void>;
   /** 钉住后仍需保持隐藏的宿主窗口（抓屏前被隐藏、取消时才恢复） */
   keepHiddenAfterPin?(win: BrowserWindow): boolean;
+  /** 每次结束截图（含宿主自己调用 cancel）时回调，用于收起宿主侧的附属窗口（如录制控制条） */
+  onCancel?(reason: string): void;
   /** 截图开始 / 结束时通知宿主（用于托盘图标等） */
   onStateChange?(snipping: boolean): void;
   /** 取消截图后把焦点还给宿主 */
@@ -72,6 +76,10 @@ export interface Snipper {
   install(ipcMain: IpcMain): () => void;
   /** 把一张独立图片钉成贴图（历史记录、长图编辑等） */
   pinImage(png: Uint8Array, opts?: { editMode?: boolean }): Promise<void>;
+  /** 收起全部贴图，返回数量 */
+  closePins(): number;
+  /** 解除（ignore = false）或开启全部贴图的鼠标点击穿透 */
+  setPinsMouseIgnore(ignore: boolean): void;
   /** 结束会话并释放所有窗口 */
   dispose(): void;
 }

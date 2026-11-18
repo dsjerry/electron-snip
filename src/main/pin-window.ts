@@ -79,11 +79,24 @@ export class PinRegistry {
     return win.loadFile(path.join(this.opts.rendererDir, 'pin.html'));
   }
 
-  closeAll(): void {
+  closeAll(): number {
+    let n = 0;
     for (const win of this.pins) {
-      if (!win.isDestroyed()) win.close();
+      if (win.isDestroyed()) continue;
+      win.close();
+      n++;
     }
     this.pins.clear();
+    return n;
+  }
+
+  setIgnoreAll(ignore: boolean): void {
+    for (const win of this.pins) {
+      if (win.isDestroyed()) continue;
+      if (ignore) this.mouseIgnored.add(win);
+      else this.mouseIgnored.delete(win);
+      win.setIgnoreMouseEvents(ignore, { forward: ignore });
+    }
   }
 
   /** Ctrl+T：切换该贴图的鼠标点击穿透，返回切换后的状态。 */
