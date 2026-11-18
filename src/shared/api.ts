@@ -9,7 +9,7 @@ import type {
   OverlayTeardownPayload,
   PinAction,
   PinActionResult,
-  PinInitPayload,
+  PinBootPayload,
   Shape,
   ToolId,
 } from './types';
@@ -52,7 +52,7 @@ export interface SnipRendererApi {
   };
   pin: {
     /** 拿到拼接所需的全部数据 */
-    boot(): Promise<PinInitPayload | null>;
+    boot(): Promise<PinBootPayload | null>;
     /** 拼接完成，主进程收到后才会收起遮罩并显示贴图 */
     ready(payload: { width: number; height: number }): Promise<void>;
     action(payload: PinAction): Promise<PinActionResult>;

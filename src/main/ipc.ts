@@ -5,7 +5,7 @@ import type {
   OverlayInput,
   PinActionResult,
   PinAction,
-  PinInitPayload,
+  PinBootPayload,
   Shape,
   ToolId,
 } from '../shared/types';
@@ -24,7 +24,7 @@ export interface SnipHandlers {
   overlayExport(sender: WebContents, kind: 'copy' | 'save', png: Uint8Array): Promise<PinActionResult>;
   overlayFocus(sender: WebContents): void;
   overlayCopyText(text: string): Promise<PinActionResult>;
-  pinBoot(sender: WebContents): PinInitPayload | null;
+  pinBoot(sender: WebContents): PinBootPayload | null;
   pinReady(sender: WebContents): void;
   pinAction(sender: WebContents, payload: PinAction): Promise<PinActionResult>;
 }

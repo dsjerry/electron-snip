@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, nativeImage, screen } from 'electron';
 import type { IpcMain, WebContents } from 'electron';
 import { CH } from '../shared/channels';
 import { bestRegionOnDisplay, displayAt, resolveOutScale, unionBounds } from '../shared/geometry';
@@ -17,7 +17,7 @@ import type {
   OverlaySelectionPayload,
   PinActionResult,
   PinAction,
-  PinInitPayload,
+  PinBootPayload,
   Point,
   Rect,
   Shape,
@@ -117,6 +117,8 @@ export function createSnipper(opts: SnipOptions): Snipper {
   /** 其余屏的抓屏 + 补窗；确认选区前要等它落地，否则拼接会缺一块 */
   let pendingRest: Promise<void> | null = null;
   const pinReadyWaiters = new Map<number, () => void>();
+  /** 独立图片贴图：等 renderer 来 pin:boot 取数据 */
+  const pendingImages = new Map<number, { png: Buffer; width: number; height: number; editMode: boolean }>();
   let uninstallIpc: (() => void) | null = null;
   let uninstallScreen: (() => void) | null = null;
 
@@ -961,10 +963,6 @@ export function createSnipper(opts: SnipOptions): Snipper {
     opts.onStateChange?.(false);
   }
 
-  function ownsPendingPin(sender: WebContents): boolean {
-    return session?.pendingPin?.webContents.id === sender.id;
-  }
-
   /** renderer 拼接完成并调用 pin:ready 时，唤醒 confirmSnip 的等待。 */
   function markPinReady(sender: WebContents): void {
     const resolve = pinReadyWaiters.get(sender.id);
@@ -974,9 +972,49 @@ export function createSnipper(opts: SnipOptions): Snipper {
     }
   }
 
+  /** pin:boot 的「独立图片」分支：取走挂在本窗口上的图片数据。 */
+  function takePendingImage(sender: WebContents): PinBootPayload | null {
+    const pending = pendingImages.get(sender.id);
+    if (!pending) return null;
+    pendingImages.delete(sender.id);
+    return {
+      kind: 'image',
+      png: new Uint8Array(pending.png),
+      width: pending.width,
+      height: pending.height,
+      editMode: pending.editMode,
+    };
+  }
+
+  async function pinImage(png: Uint8Array, o: { editMode?: boolean } = {}): Promise<void> {
+    const img = nativeImage.createFromBuffer(Buffer.from(png));
+    if (img.isEmpty()) throw new Error('图片数据为空');
+    const { width, height } = img.getSize();
+    // 图片超过工作区 70% 就等比缩小，居中落在主屏上
+    const wa = screen.getPrimaryDisplay().workArea;
+    const scale = Math.min(1, (wa.width * 0.7) / width, (wa.height * 0.7) / height);
+    const w = Math.max(120, Math.round(width * scale));
+    const h = Math.max(90, Math.round(height * scale));
+    const bounds = {
+      x: wa.x + Math.round((wa.width - w) / 2),
+      y: wa.y + Math.round((wa.height - h) / 2),
+      width: w,
+      height: h,
+    };
+    const pin = pins.create(bounds);
+    pendingImages.set(pin.webContents.id, { png: Buffer.from(png), width: w, height: h, editMode: !!o.editMode });
+    // 与截图钉住同一规则：renderer 拼好（这里是解码）后才显示，避免闪白
+    const ready = new Promise<void>((resolve) => pinReadyWaiters.set(pin.webContents.id, resolve));
+    await pins.load(pin);
+    await ready;
+    pinReadyWaiters.delete(pin.webContents.id);
+    if (!pin.isDestroyed()) pin.showInactive();
+  }
+
   /** renderer 调 pin:boot 时拿到拼接所需的全部数据。 */
-  function onPinBoot(sender: WebContents): PinInitPayload | null {
+  function onPinBoot(sender: WebContents): PinBootPayload | null {
     const s = session;
+    if (!s && pendingImages.has(sender.id)) return takePendingImage(sender);
     if (!s || s.pendingPin?.webContents.id !== sender.id) {
       log.warn(
         `[snip] pin:boot 被拒绝 sender=${sender.id} phase=${s?.phase ?? 'none'} pending=${s?.pendingPin?.webContents.id ?? 'none'}`,
@@ -988,6 +1026,7 @@ export function createSnipper(opts: SnipOptions): Snipper {
       return null;
     }
     return {
+      kind: 'snip',
       shots: s.shots,
       selection: s.selection,
       outScale: resolveOutScale(s.shots, s.selection),
@@ -1104,15 +1143,14 @@ export function createSnipper(opts: SnipOptions): Snipper {
       }
     },
     pinBoot: (sender) => onPinBoot(sender),
-    pinReady: (sender) => {
-      if (ownsPendingPin(sender)) markPinReady(sender);
-    },
+    pinReady: (sender) => markPinReady(sender),
     pinAction: (sender, payload) => onPinAction(sender, payload),
   };
 
   return {
     start,
     cancel,
+    pinImage,
     install(target: IpcMain): () => void {
       // 屏幕变化（分辨率 / 拔插）时正在进行的截图无法再对齐，直接收场
       const onDisplayChange = () => {

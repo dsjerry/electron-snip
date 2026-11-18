@@ -4,7 +4,8 @@ import { stitch } from '../../shared/stitch';
 import { drawShape } from '../../annotations/shapes';
 import { Editor } from '../../annotations/editor';
 import { createToolbar } from '../../annotations/toolbar';
-import type { PinInitPayload, Shape } from '../../shared/types';
+import { toBlob } from '../../shared/bytes';
+import type { PinBootPayload, Shape } from '../../shared/types';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const closeBtn = document.getElementById('close') as HTMLButtonElement;
@@ -136,34 +137,46 @@ window.addEventListener('keydown', (event) => {
 });
 
 async function main(): Promise<void> {
-  const payload: PinInitPayload | null = await window.snip.pin.boot();
+  const payload: PinBootPayload | null = await window.snip.pin.boot();
   if (!payload) {
     console.warn('[pin] boot 返回 null');
     return;
   }
-  console.log(
-    `[pin] boot ok selection=${Math.round(payload.selection.width)}x${Math.round(payload.selection.height)}` +
-      ` outScale=${payload.outScale} shapes=${payload.initialShapes.length}` +
-      ` pad=${JSON.stringify(payload.padding)}`,
-  );
+  if (payload.kind === 'image') {
+    // 独立图片：直接铺成底图，没有阴影留白、没有遮罩阶段的标注
+    const bmp = await createImageBitmap(toBlob(payload.png, 'image/png'));
+    base = document.createElement('canvas');
+    base.width = bmp.width;
+    base.height = bmp.height;
+    base.getContext('2d')?.drawImage(bmp, 0, 0);
+    bmp.close();
+    initialShapes = [];
+  } else {
+    console.log(
+      `[pin] boot ok selection=${Math.round(payload.selection.width)}x${Math.round(payload.selection.height)}` +
+        ` outScale=${payload.outScale} shapes=${payload.initialShapes.length}` +
+        ` pad=${JSON.stringify(payload.padding)}`,
+    );
+    // 四边阴影留白：主进程算的，渲染进程只负责让开画布位置（pin.css 用它做 calc）
+    const pad = payload.padding;
+    const vars = document.documentElement.style;
+    vars.setProperty('--pad-top', `${pad.top}px`);
+    vars.setProperty('--pad-right', `${pad.right}px`);
+    vars.setProperty('--pad-bottom', `${pad.bottom}px`);
+    vars.setProperty('--pad-left', `${pad.left}px`);
 
-  // 四边阴影留白：主进程算的，渲染进程只负责让开画布位置（pin.css 用它做 calc）
-  const pad = payload.padding;
-  const vars = document.documentElement.style;
-  vars.setProperty('--pad-top', `${pad.top}px`);
-  vars.setProperty('--pad-right', `${pad.right}px`);
-  vars.setProperty('--pad-bottom', `${pad.bottom}px`);
-  vars.setProperty('--pad-left', `${pad.left}px`);
-
-  base = await stitch(payload);
-  console.log(`[pin] 拼接完成 ${base.width}x${base.height}`);
-  initialShapes = payload.initialShapes;
+    base = await stitch(payload);
+    console.log(`[pin] 拼接完成 ${base.width}x${base.height}`);
+    initialShapes = payload.initialShapes;
+  }
 
   // 画布 backing store = 图像像素（固定不变）；CSS 尺寸随窗口缩放，
   // devicePixelRatio 完全不参与换算，拖到别的 DPI 的屏上也不会错位。
   canvas.width = base.width;
   canvas.height = base.height;
   repaint();
+
+  if (payload.kind === 'image' && payload.editMode) enterEdit();
 
   closeBtn.addEventListener('click', () => {
     void window.snip.pin.action({ kind: 'close' });

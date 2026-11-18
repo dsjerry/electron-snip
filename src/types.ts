@@ -70,6 +70,8 @@ export interface Snipper {
   cancel(reason?: string): void;
   /** 注册 IPC 通道与屏幕事件，返回卸载函数；必须在 app ready 之后调用 */
   install(ipcMain: IpcMain): () => void;
+  /** 把一张独立图片钉成贴图（历史记录、长图编辑等） */
+  pinImage(png: Uint8Array, opts?: { editMode?: boolean }): Promise<void>;
   /** 结束会话并释放所有窗口 */
   dispose(): void;
 }

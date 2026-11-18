@@ -1,5 +1,5 @@
 // 冒烟测试：加载 electron-snip 的构建产物，验证 preload / 渲染脚本 / 工具条装配
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const path = require('node:path');
 
 const dist = path.join(__dirname, '..', 'dist');
@@ -27,7 +27,8 @@ app.whenReady().then(async () => {
     actions: [{ id: 'ext', label: '宿主动作', icon: '<svg viewBox="0 0 24 24"></svg>' }],
   }));
   ipcMain.handle('snip:overlay:ready', () => undefined);
-  ipcMain.handle('snip:pin:boot', () => ({
+  const snipPinBoot = () => ({
+    kind: 'snip',
     shots: [fakeShot()],
     selection: { x: 0, y: 0, width: 200, height: 100 },
     outScale: 1,
@@ -35,8 +36,16 @@ app.whenReady().then(async () => {
     dipHeight: 100,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     initialShapes: [],
-  }));
+  });
   ipcMain.handle('snip:pin:ready', () => undefined);
+  // 独立图片贴图（pinImage 的路径）：用 Electron 真实编码一张 40×30 的 PNG
+  const pngBytes = nativeImage.createFromBitmap(Buffer.alloc(40 * 30 * 4, 200), { width: 40, height: 30 }).toPNG();
+  let imagePinBoot = false;
+  ipcMain.handle('snip:pin:boot', () =>
+    imagePinBoot
+      ? { kind: 'image', png: new Uint8Array(pngBytes), width: 40, height: 30, editMode: false }
+      : snipPinBoot(),
+  );
 
   const webPreferences = { preload, contextIsolation: true, nodeIntegration: false, sandbox: false };
 
@@ -71,6 +80,20 @@ app.whenReady().then(async () => {
     closeButton: !!document.getElementById('close'),
   })`);
   result.pinErrors = pinErrors;
+
+  imagePinBoot = true;
+  const imagePin = new BrowserWindow({ show: false, width: 40, height: 30, webPreferences });
+  const imagePinErrors = [];
+  imagePin.webContents.on('console-message', (_e, level, message) => {
+    if (level >= 2) imagePinErrors.push(message);
+  });
+  await imagePin.loadFile(path.join(dist, 'renderer', 'pin.html'));
+  await new Promise((r) => setTimeout(r, 800));
+  result.imagePin = await imagePin.webContents.executeJavaScript(`({
+    canvasWidth: document.getElementById('stage').width,
+    canvasHeight: document.getElementById('stage').height,
+  })`);
+  result.imagePinErrors = imagePinErrors;
 
   console.log('SMOKE ' + JSON.stringify(result));
   app.quit();

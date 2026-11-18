@@ -175,6 +175,7 @@ export interface OverlayPanelPayload {
 }
 
 export interface PinInitPayload {
+  kind: 'snip';
   shots: DisplayShot[];
   selection: Rect;
   outScale: number;
@@ -188,6 +189,18 @@ export interface PinInitPayload {
    */
   initialShapes: Shape[];
 }
+
+/** 独立图片的贴图（历史记录、长图二次编辑等宿主场景） */
+export interface PinImagePayload {
+  kind: 'image';
+  png: Uint8Array;
+  width: number;
+  height: number;
+  /** 打开后直接进入标注编辑模式 */
+  editMode: boolean;
+}
+
+export type PinBootPayload = PinInitPayload | PinImagePayload;
 
 export type PinAction =
   | { kind: 'copy'; png: Uint8Array }
