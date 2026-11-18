@@ -12,7 +12,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./preload": "./dist/preload.cjs"
+    "./preload": "./dist/preload.cjs",
+    "./renderer/*": "./dist/renderer/*"
   },
   "files": [
     "dist",
@@ -22,12 +23,14 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "electron scripts/smoke-electron.cjs"
   },
   "peerDependencies": {
     "electron": ">=43"
@@ -38,6 +41,8 @@
     "@vitest/browser-playwright": "4.1.12",
     "electron": "44.4.3",
     "eslint": "10.14.0",
+    "globals": "17.13.0",
+    "lucide-static": "1.48.0",
     "playwright": "1.65.0",
     "prettier": "3.10.0",
     "tsup": "8.5.1",

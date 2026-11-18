@@ -88,9 +88,20 @@ export type Shape =
  */
 export type SnipPhase = 'selecting' | 'adjusting' | 'confirming';
 
+/** 宿主动作在工具条上的描述（不含 run，run 留在主进程） */
+export interface OverlayActionDescriptor {
+  id: string;
+  label: string;
+  icon?: string;
+  danger?: boolean;
+  primary?: boolean;
+}
+
 export interface OverlayInitPayload {
   shot: DisplayShot;
   virtualBounds: Rect;
+  /** 宿主注册的动作，遮罩据此把它们追加到工具条的动作组 */
+  actions: OverlayActionDescriptor[];
 }
 
 export interface OverlaySelectionPayload {

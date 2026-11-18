@@ -481,7 +481,8 @@ export function createSnipper(opts: SnipOptions): Snipper {
     if (!session) return null;
     const shot = session.shotByContents.get(sender.id);
     if (!shot) return null;
-    return { shot, virtualBounds: session.virtualBounds };
+    const actions = hostActions.map(({ id, label, icon, danger, primary }) => ({ id, label, icon, danger, primary }));
+    return { shot, virtualBounds: session.virtualBounds, actions };
   }
 
   function onOverlayReady(sender: WebContents): void {
