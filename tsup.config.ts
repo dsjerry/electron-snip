@@ -45,4 +45,15 @@ export default defineConfig([
     sourcemap: true,
     onSuccess: copyRendererHtml,
   },
+  {
+    // 标注引擎：供宿主的录制控制条等页面复用（浏览器 ESM + 同名 CSS）
+    entry: { annotations: 'src/annotations/index.ts' },
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2022',
+    outDir: 'dist/annotations',
+    loader: { '.svg': 'text' },
+    sourcemap: true,
+    dts: true,
+  },
 ]);

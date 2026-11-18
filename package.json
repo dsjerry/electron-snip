@@ -13,7 +13,12 @@
       "import": "./dist/index.js"
     },
     "./preload": "./dist/preload.cjs",
-    "./renderer/*": "./dist/renderer/*"
+    "./renderer/*": "./dist/renderer/*",
+    "./annotations": {
+      "types": "./dist/annotations/annotations.d.ts",
+      "import": "./dist/annotations/annotations.js"
+    },
+    "./annotations.css": "./dist/annotations/annotations.css"
   },
   "files": [
     "dist",
