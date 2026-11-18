@@ -1,0 +1,46 @@
+{
+  "name": "electron-snip",
+  "version": "0.1.0",
+  "description": "Electron 跨屏截图 SDK：框选、遮罩、标注、贴图、复制 / 保存",
+  "type": "module",
+  "license": "MIT",
+  "author": "dsjerry",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./preload": "./dist/preload.cjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "electron": ">=43"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "electron": "44.4.3",
+    "eslint": "10.14.0",
+    "prettier": "3.10.0",
+    "tsup": "8.5.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "4.1.12"
+  }
+}
