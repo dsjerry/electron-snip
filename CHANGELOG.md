@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 标注绘制支持 Shift 约束：矩形变正方形、椭圆变正圆，画笔与荧光笔变直线（松开 Shift 恢复手绘）。
+
 ## 0.1.0
 
 首个版本，从 screenshots-demo 抽离。

@@ -22,6 +22,15 @@ const COLORS = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#2f6fed', '#af52de'
 const WIDTH_MIN = 1;
 const WIDTH_MAX = 20;
 const ARROW_HEADS: ArrowHead[] = ['solid', 'open'];
+
+/**
+ * Shift 约束：把拖动的位移变成正方形的两边（符号保留，拖向哪个象限就画在哪个象限）。
+ * 边长取两个方向上较大的那个，光标在哪一侧都能得到稳定的正方形。
+ */
+function squareExtent(dx: number, dy: number): [number, number] {
+  const side = Math.max(Math.abs(dx), Math.abs(dy));
+  return [dx < 0 ? -side : side, dy < 0 ? -side : side];
+}
 /** 文字字号独立于线宽 —— 线宽对文字没有意义 */
 const FONT_SIZES = [16, 24, 32, 48];
 const MOSAIC_MODES: MosaicMode[] = ['region', 'brush'];
@@ -677,10 +686,16 @@ export class Editor {
         this.draft.y2 = p.y;
       } else if (this.draft.type === 'pen') {
         this.penPoints.push(p);
-        this.draft.points = [...this.penPoints];
+        // 按住 Shift 画直线：只取起点到当前点两个端点。自由路径仍在 penPoints 里累积，
+        // 松开 Shift 后恢复成手绘路径，不会丢掉之前画的轨迹
+        this.draft.points = event.shiftKey ? [this.penPoints[0], p] : [...this.penPoints];
       } else if (this.draft.type === 'rect' || this.draft.type === 'ellipse') {
-        this.draft.w = p.x - this.draft.x;
-        this.draft.h = p.y - this.draft.y;
+        const dx = p.x - this.draft.x;
+        const dy = p.y - this.draft.y;
+        // 按住 Shift 约束为正方形 / 正圆：取两个方向上较大的那一边
+        const [w, h] = event.shiftKey ? squareExtent(dx, dy) : [dx, dy];
+        this.draft.w = w;
+        this.draft.h = h;
       } else if (this.draft.type === 'mosaic') {
         if (this.draft.mode === 'brush') {
           // 涂抹与画笔同样累加路径点
