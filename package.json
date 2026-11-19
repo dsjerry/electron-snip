@@ -18,7 +18,11 @@
       "types": "./dist/annotations/annotations.d.ts",
       "import": "./dist/annotations/annotations.js"
     },
-    "./annotations.css": "./dist/annotations/annotations.css"
+    "./annotations.css": "./dist/annotations/annotations.css",
+    "./utils": {
+      "types": "./dist/utils/utils.d.ts",
+      "import": "./dist/utils/utils.js"
+    }
   },
   "files": [
     "dist",
@@ -67,6 +71,9 @@
     "*": {
       "annotations": [
         "./dist/annotations/annotations.d.ts"
+      ],
+      "utils": [
+        "./dist/utils/utils.d.ts"
       ]
     }
   }

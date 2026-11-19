@@ -56,4 +56,14 @@ export default defineConfig([
     sourcemap: true,
     dts: true,
   },
+  {
+    // 浏览器可用的小工具（子路径 electron-snip/utils）
+    entry: { utils: 'src/utils/index.ts' },
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2022',
+    outDir: 'dist/utils',
+    sourcemap: true,
+    dts: true,
+  },
 ]);
