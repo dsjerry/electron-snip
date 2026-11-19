@@ -9,7 +9,8 @@ import { forwardRendererLogs, log } from './log';
  * `before-input-event` / `closed` 会堆出重复监听器。
  */
 export interface OverlayHooks {
-  onKey(webContents: WebContents, kind: 'escape' | 'enter'): void;
+  /** 返回 true 表示由会话处理，主进程才拦截这次按键；false 则放行给渲染进程（如文字框换行） */
+  onKey(webContents: WebContents, kind: 'escape' | 'enter'): boolean;
   onClosed(contentsId: number): void;
 }
 
@@ -127,13 +128,9 @@ export class OverlayPool {
     // 因此不会和渲染进程的 keydown 重复触发；渲染进程 JS 挂了也照样有效。
     win.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
-      if (input.key === 'Escape') {
-        event.preventDefault();
-        this.hooks.onKey(win.webContents, 'escape');
-      } else if (input.key === 'Enter' || input.key === 'NumpadEnter') {
-        event.preventDefault();
-        this.hooks.onKey(win.webContents, 'enter');
-      }
+      const kind =
+        input.key === 'Escape' ? 'escape' : input.key === 'Enter' || input.key === 'NumpadEnter' ? 'enter' : null;
+      if (kind && this.hooks.onKey(win.webContents, kind)) event.preventDefault();
     });
 
     win.on('closed', () => {

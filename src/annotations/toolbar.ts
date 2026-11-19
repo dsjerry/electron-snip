@@ -64,8 +64,14 @@ const ACTION_ICONS: Record<string, string> = {
 };
 
 const ARROW_HEAD_LABELS: Record<ArrowHead, string> = {
-  solid: '实心',
-  open: '空心',
+  solid: '实心箭头',
+  open: '空心箭头',
+};
+
+/** 箭头样式图标：左下到右上的杆身，右上角是实心三角 / 空心折角 */
+const ARROW_HEAD_ICONS: Record<ArrowHead, string> = {
+  solid: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4.5 19.5 14 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M11 4.5h8.5V13z" fill="currentColor"/></svg>`,
+  open: `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4.5 19.5 14 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M11 4.5h8.5V13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
 const MOSAIC_MODE_LABELS: Record<MosaicMode, string> = {
@@ -179,20 +185,17 @@ export function createToolbar(container: HTMLElement, editor: Editor, opts: Tool
   });
   widths.append(widthRange, widthVal);
 
-  // 箭头形状：下拉（实心 / 空心）
+  // 箭头形状：图标按钮（实心 / 空心），悬停提示用中文名称
   const heads = group();
-  const headSelect = document.createElement('select');
-  headSelect.title = '箭头形状';
   for (const h of editor.arrowHeads) {
-    const opt = document.createElement('option');
-    opt.value = h;
-    opt.textContent = ARROW_HEAD_LABELS[h];
-    headSelect.append(opt);
+    const btn = iconButton(ARROW_HEAD_ICONS[h], ARROW_HEAD_LABELS[h]);
+    btn.dataset.head = h;
+    btn.addEventListener('click', () => {
+      editor.setArrowHead(h);
+      syncActive();
+    });
+    heads.append(btn);
   }
-  headSelect.addEventListener('change', () => {
-    editor.setArrowHead(headSelect.value as ArrowHead);
-  });
-  heads.append(headSelect);
 
   // 字号：下拉
   const sizes = group();
@@ -280,8 +283,8 @@ export function createToolbar(container: HTMLElement, editor: Editor, opts: Tool
     attr('tool', editor.currentTool);
     attr('color', editor.colorValue);
     attr('mode', editor.mosaicModeValue);
+    attr('head', editor.arrowHeadValue);
     // 下拉 / 滑杆：直接回填当前值（工具条重挂、选中图形改色等都会走到）
-    headSelect.value = editor.arrowHeadValue;
     sizeSelect.value = String(editor.fontSizeValue);
     widthRange.value = String(editor.widthValue);
     widthVal.textContent = String(editor.widthValue);

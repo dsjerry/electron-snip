@@ -125,9 +125,11 @@ export function createSnipper(opts: SnipOptions): Snipper {
   /** 接线只在窗口创建时做一次，见 overlay-window.ts 的说明。 */
   const overlayHooks: OverlayHooks = {
     onKey: (webContents, kind) => {
-      // 文字输入框开着时，Enter / Esc 归渲染进程（提交 / 取消文字）
-      if (session?.editText.has(webContents.id)) return;
+      // 文字输入框开着时，Enter（换行）与 Esc / Ctrl+Enter（取消 / 提交）都归渲染进程 ——
+      // 返回 false 让按键放行到 textarea，否则换行插不进去
+      if (session?.editText.has(webContents.id)) return false;
       onOverlayInput(webContents, { kind });
+      return true;
     },
     onClosed: (contentsId) => {
       const s = session;
