@@ -13,7 +13,8 @@ async function copyRendererHtml(): Promise<void> {
 export default defineConfig([
   {
     entry: { index: 'src/index.ts' },
-    format: ['esm'],
+    // 同时产出 ESM 与 CJS：宿主主进程是 CJS 构建，经 require 解析时需要 require 条件
+    format: ['esm', 'cjs'],
     platform: 'node',
     target: 'node24',
     dts: true,
