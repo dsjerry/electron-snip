@@ -1,5 +1,11 @@
 # electron-snip
 
+[![CI](https://github.com/dsjerry/electron-snip/actions/workflows/ci.yml/badge.svg)](https://github.com/dsjerry/electron-snip/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+![Electron](https://img.shields.io/badge/Electron-%3E%3D43-47848F)
+![Node](https://img.shields.io/badge/Node-24-339933)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
+
 Electron 跨屏截图 SDK：框选（可跨屏、混合 DPI）、窗口吸附、遮罩标注、钉成贴图、复制 / 保存。
 宿主只需注册动作与导出回调。
 
