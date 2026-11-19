@@ -830,12 +830,11 @@ export class Editor {
     this.closeActiveText?.();
 
     const ta = this.textEditor;
-    const rect = this.canvas.getBoundingClientRect();
     // 字号独立于线宽（线宽对文字没有意义），二次编辑沿用原字号
     const fontSize = existing ? existing.size : this.fontSize;
     // 输入框字号要和「最终画上去的字号」在屏幕上一样大：
     // 钉图是图像像素空间（1 图像 px = 1/outScale CSS px），遮罩是 DIP 空间（1:1）
-    const scale = this.opts.coords === 'css' || rect.width <= 0 ? 1 : rect.width / this.canvas.width;
+    const scale = this.textScale();
 
     ta.value = existing?.text ?? '';
     ta.hidden = false;
@@ -866,7 +865,9 @@ export class Editor {
         const text = ta.value.trim();
         console.log(`[editor] 文字提交 长度=${text.length}`);
         if (text) {
-          const at = this.clampTextOrigin(origin, text, fontSize);
+          // 换行宽度 = 文本框当前宽度（CSS px）换算到标注坐标系；输入时 textarea 按同样宽度折行，所见即所得
+          const maxWidth = ta.clientWidth / scale;
+          const at = this.clampTextOrigin(origin, text, fontSize, maxWidth);
           if (existing) {
             // 二次编辑：原位替换（进历史，可撤销）
             const idx = this.shapes.indexOf(existing);
@@ -878,6 +879,7 @@ export class Editor {
                 y: at.y,
                 text,
                 size: fontSize,
+                maxWidth,
               };
               this.onHistoryChange?.();
               this.render();
@@ -890,6 +892,7 @@ export class Editor {
               text,
               color: this.color,
               size: fontSize,
+              maxWidth,
             });
             console.log(`[editor] 新增标注 type=text 总数=${this.shapes.length}`);
             this.render();
@@ -934,8 +937,14 @@ export class Editor {
    * 把文字锚点夹进画布：点在右下角又打了很多字的话，不夹紧
    * 导出时右侧 / 下侧会被画布裁掉。测量用绘制同一套字体与行高。
    */
-  private clampTextOrigin(origin: Point, text: string, size: number): Point {
-    const block = measureTextBlock(this.ctx, text, size);
+  /** 文本框 CSS px → 标注坐标的比例（钉图是图像像素空间，遮罩是 DIP 空间 1:1）。 */
+  private textScale(): number {
+    const rect = this.canvas.getBoundingClientRect();
+    return this.opts.coords === 'css' || rect.width <= 0 ? 1 : rect.width / this.canvas.width;
+  }
+
+  private clampTextOrigin(origin: Point, text: string, size: number, maxWidth?: number): Point {
+    const block = measureTextBlock(this.ctx, text, size, maxWidth);
     // 夹紧边界必须和坐标空间一致：钉图用画布像素，遮罩用 CSS px（= DIP）
     const rect = this.canvas.getBoundingClientRect();
     const maxX = this.opts.coords === 'css' ? rect.width : this.canvas.width;

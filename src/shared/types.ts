@@ -76,7 +76,16 @@ export type Shape =
       | { mode: 'blur'; x: number; y: number; w: number; h: number }
     ))
   | { type: 'counter'; x: number; y: number; n: number; color: string }
-  | { type: 'text'; x: number; y: number; text: string; color: string; size: number };
+  | {
+      type: 'text';
+      x: number;
+      y: number;
+      text: string;
+      color: string;
+      size: number;
+      /** 自动换行宽度（与绘制同一坐标系）；缺省只按 \n 分行 */
+      maxWidth?: number;
+    };
 
 /**
  * 截图会话阶段。

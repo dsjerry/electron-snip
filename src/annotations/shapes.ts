@@ -186,7 +186,7 @@ export function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
       ctx.textBaseline = 'top';
       ctx.font = textFont(shape.size);
       const lineHeight = textLineHeight(shape.size);
-      shape.text.split('\n').forEach((line, i) => {
+      wrapText(ctx, shape.text, shape.size, shape.maxWidth).forEach((line, i) => {
         ctx.fillText(line, shape.x, shape.y + i * lineHeight);
       });
       break;
@@ -205,16 +205,46 @@ export function textLineHeight(size: number): number {
   return size * 1.3;
 }
 
-/** 文字块的外接尺寸（多行取最宽一行，高度按行高累加）。 */
+/**
+ * 按换行宽度折行：先按 \n 分段，段内逐字符累加，超过 maxWidth 就另起一行。
+ * 逐字符而非逐词：中文没有空格可断，英文也能在任意位置折（与 textarea 的
+ * 视觉折行规则一致，保证输入时看到的换行和导出的换行相同）。
+ * 未给 maxWidth 时只按 \n 分行（旧数据的行为不变）。
+ */
+export function wrapText(ctx: CanvasRenderingContext2D, text: string, size: number, maxWidth?: number): string[] {
+  const paragraphs = text.split('\n');
+  if (!maxWidth || maxWidth <= 0) return paragraphs;
+  ctx.save();
+  ctx.font = textFont(size);
+  const out: string[] = [];
+  for (const para of paragraphs) {
+    let line = '';
+    for (const ch of para) {
+      const next = line + ch;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        out.push(line);
+        line = ch;
+      } else {
+        line = next;
+      }
+    }
+    out.push(line);
+  }
+  ctx.restore();
+  return out;
+}
+
+/** 文字块的外接尺寸（按换行宽度折行后，多行取最宽一行，高度按行高累加）。 */
 export function measureTextBlock(
   ctx: CanvasRenderingContext2D,
   text: string,
   size: number,
+  maxWidth?: number,
 ): { width: number; height: number } {
+  const lines = wrapText(ctx, text, size, maxWidth);
   ctx.save();
   ctx.font = textFont(size);
   ctx.textBaseline = 'top';
-  const lines = text.split('\n');
   let width = 0;
   for (const line of lines) {
     width = Math.max(width, ctx.measureText(line).width);
@@ -399,7 +429,7 @@ export function cloneShape(shape: Shape): Shape {
 /** 图形的外接矩形；文字需要 ctx 才能测量。 */
 export function shapeBBox(shape: Shape, ctx: CanvasRenderingContext2D): Rect {
   if (shape.type === 'text') {
-    const m = measureTextBlock(ctx, shape.text, shape.size);
+    const m = measureTextBlock(ctx, shape.text, shape.size, shape.maxWidth);
     return { x: shape.x, y: shape.y, width: m.width, height: m.height };
   }
   if (shape.type === 'counter') {

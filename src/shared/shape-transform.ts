@@ -37,6 +37,7 @@ export function mapShape(shape: Shape, dx: number, dy: number, k: number): Shape
         x: (shape.x + dx) * k,
         y: (shape.y + dy) * k,
         size: shape.size * k,
+        ...(shape.maxWidth !== undefined ? { maxWidth: shape.maxWidth * k } : {}),
       };
     case 'mosaic':
       if (shape.mode === 'brush') {
