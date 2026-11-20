@@ -41,7 +41,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "smoke": "electron scripts/smoke-electron.cjs",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "example": "electron examples/basic/main.cjs"
   },
   "peerDependencies": {
     "electron": ">=43"
