@@ -16,7 +16,14 @@ function setup() {
 
 /** 用真实指针事件在画布上拖出一个矩形 */
 function drawRect(canvas: HTMLCanvasElement, from: [number, number], to: [number, number]): void {
-  const init = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0, bubbles: true, pointerId: 1 });
+  const init = (x: number, y: number) => ({
+    clientX: x,
+    clientY: y,
+    button: 0,
+    bubbles: true,
+    pointerId: 1,
+    buttons: 1,
+  });
   canvas.dispatchEvent(new PointerEvent('pointerdown', init(from[0], from[1])));
   window.dispatchEvent(new PointerEvent('pointermove', init(to[0], to[1])));
   window.dispatchEvent(new PointerEvent('pointerup', init(to[0], to[1])));

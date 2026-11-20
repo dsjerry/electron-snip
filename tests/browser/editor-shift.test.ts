@@ -26,6 +26,7 @@ function drag(canvas: HTMLCanvasElement, from: [number, number], to: [number, nu
     button: 0,
     bubbles: true,
     pointerId: 1,
+    buttons: 1,
     shiftKey: shift,
   });
   canvas.dispatchEvent(new PointerEvent('pointerdown', init(from[0], from[1])));
@@ -84,6 +85,7 @@ describe('Shift 约束绘制', () => {
       button: 0,
       bubbles: true,
       pointerId: 1,
+      buttons: 1,
       shiftKey: shift,
     });
     canvas.dispatchEvent(new PointerEvent('pointerdown', init(20, 20, true)));
@@ -101,11 +103,17 @@ describe('Shift 约束绘制', () => {
     const { canvas, editor } = setup();
     editor.setTool('pen');
     canvas.dispatchEvent(
-      new PointerEvent('pointerdown', { clientX: 20, clientY: 20, button: 0, bubbles: true, pointerId: 1 }),
+      new PointerEvent('pointerdown', { clientX: 20, clientY: 20, button: 0, bubbles: true, pointerId: 1, buttons: 1 }),
     );
-    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 60, clientY: 90, bubbles: true, pointerId: 1 }));
-    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, clientY: 40, bubbles: true, pointerId: 1 }));
-    window.dispatchEvent(new PointerEvent('pointerup', { clientX: 100, clientY: 40, bubbles: true, pointerId: 1 }));
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { clientX: 60, clientY: 90, bubbles: true, pointerId: 1, buttons: 1 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { clientX: 100, clientY: 40, bubbles: true, pointerId: 1, buttons: 1 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent('pointerup', { clientX: 100, clientY: 40, bubbles: true, pointerId: 1, buttons: 1 }),
+    );
     const [pen] = editor.getShapes();
     if (pen.type !== 'pen') throw new Error('expected pen');
     expect(pen.points.length).toBeGreaterThan(2);

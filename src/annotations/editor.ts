@@ -110,6 +110,8 @@ export class Editor {
   /** 正在拖动的图形副本；落盘前 `shapes` 里仍是原对象 */
   private editing: Shape | null = null;
   private editingOf: Shape | null = null;
+  /** 结束当前手势的收尾函数（在 attach 里绑定 pointerup 的同一个闭包） */
+  private endGesture: () => void = () => {};
   private editOrigin: Shape | null = null;
   private editStart: Point | null = null;
   private editHandle: ShapeHandle | null = null;
@@ -158,6 +160,11 @@ export class Editor {
     if (!ctx) throw new Error('无法创建 canvas 2d 上下文');
     this.ctx = ctx;
     this.attach();
+  }
+
+  /** 结束进行中的手势（画图 / 拖动 / 调整）。宿主把按下交给自己处理时调用，避免状态残留。 */
+  resetGesture(): void {
+    this.endGesture();
   }
 
   /** 当前已提交标注的快照（深拷贝），遮罩每次历史变化回传给主进程用。 */
@@ -520,6 +527,8 @@ export class Editor {
 
     canvas.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
+      // 残留的手势（上一次松手事件丢失）先收尾，否则新的按下会被它当成继续拖动
+      if (this.mode) this.endGesture();
       const p = this.toImage(event);
 
       // 1) 已选中图形的控制点最优先：调大小 / 拖箭头端点
@@ -660,6 +669,12 @@ export class Editor {
         this.hoverCursor(event);
         return;
       }
+      // 按钮已松开却没收到 pointerup（松手落在窗口外、焦点被抢走）：收尾，别让图形跟着光标跑
+      if (event.buttons === 0) {
+        this.endGesture();
+        this.hoverCursor(event);
+        return;
+      }
       const p = this.toImage(event);
 
       if (this.mode === 'move') {
@@ -761,6 +776,7 @@ export class Editor {
     window.addEventListener('pointercancel', finish);
     // 窗口被主进程拖走时可能丢 pointerup，blur 兜底
     window.addEventListener('blur', finish);
+    this.endGesture = finish;
 
     canvas.addEventListener('wheel', (event) => this.onWheel(event), { passive: false });
   }

@@ -214,10 +214,12 @@ function routeToSelection(event: PointerEvent): boolean {
   const p = { x: event.clientX, y: event.clientY };
   const inside = !!local && pointInRect(local, p);
   if (inside && hitResizeZone(p)) {
+    editor?.resetGesture();
     void window.snip.overlay.input({ kind: 'down' });
     return true;
   }
   if (tool !== 'hand' && inside) return false;
+  editor?.resetGesture();
   void window.snip.overlay.input({ kind: 'down' });
   return true;
 }

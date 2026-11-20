@@ -16,7 +16,7 @@ function setup() {
 /** 点击画布打开文字框（文字工具） */
 function openText(canvas: HTMLCanvasElement, editor: Editor): HTMLTextAreaElement {
   editor.setTool('text');
-  const init = { clientX: 40, clientY: 40, button: 0, bubbles: true, pointerId: 1 };
+  const init = { clientX: 40, clientY: 40, button: 0, bubbles: true, pointerId: 1, buttons: 1 };
   canvas.dispatchEvent(new PointerEvent('pointerdown', init));
   window.dispatchEvent(new PointerEvent('pointerup', init));
   return document.querySelector('textarea') as HTMLTextAreaElement;
