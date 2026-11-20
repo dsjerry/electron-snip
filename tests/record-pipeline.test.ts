@@ -26,7 +26,7 @@ describe('buildGif：录制帧 → GIF', () => {
       { pixels: solid(w, h, red), at: 100 }, // 与前一帧相同 → 合并
       { pixels: solid(w, h, blue), at: 200 },
     ];
-    const parsed = parseGif(Buffer.from(buildGif(w, h, frames, 300)));
+    const parsed = parseGif(buildGif(w, h, frames, 300));
     expect(parsed.width).toBe(w);
     expect(parsed.height).toBe(h);
     expect(parsed.frames).toHaveLength(2);
@@ -39,7 +39,7 @@ describe('buildGif：录制帧 → GIF', () => {
       { pixels: solid(w, h, red), at: 0 },
       { pixels: solid(w, h, blue), at: 100 },
     ];
-    const parsed = parseGif(Buffer.from(buildGif(w, h, frames, 200)));
+    const parsed = parseGif(buildGif(w, h, frames, 200));
     expect(parsed.frames).toHaveLength(2);
     expect(new Set(parsed.frames[0].indices).size).toBe(1);
     expect(new Set(parsed.frames[1].indices).size).toBe(1);

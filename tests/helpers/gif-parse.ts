@@ -11,8 +11,12 @@ export interface ParsedFrame {
   indices: Uint8Array;
 }
 
-export function parseGif(buf: Buffer): { width: number; height: number; loops: number | null; frames: ParsedFrame[] } {
-  const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+export function parseGif(u8: Uint8Array): {
+  width: number;
+  height: number;
+  loops: number | null;
+  frames: ParsedFrame[];
+} {
   const u16 = (i: number) => u8[i] | (u8[i + 1] << 8);
   expect(String.fromCharCode(...u8.subarray(0, 6))).toBe('GIF89a');
   const width = u16(6);

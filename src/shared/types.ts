@@ -258,3 +258,58 @@ export interface ScrollMinimapPayload {
   viewTop: number;
   viewHeight: number;
 }
+
+/** 录制输出格式：GIF 动图，或每帧一张 PNG（由宿主决定如何落盘） */
+export type RecordFormat = 'gif' | 'png-sequence';
+
+/** 控制条动作：暂停 / 继续 / 停止（导出）/ 取消（丢弃） */
+export interface RecordActionPayload {
+  kind: 'pause' | 'resume' | 'stop' | 'cancel';
+}
+
+/** 控制条启动参数：主进程在 ready 时下发 */
+export interface RecordBootPayload {
+  format: RecordFormat;
+  width: number;
+  height: number;
+  fps: number;
+  /** 帧内存预算（字节）：渲染进程存帧超过它即请求停止，避免长时间录制吃光内存 */
+  maxBytes: number;
+}
+
+/** 主进程 -> 控制条：一帧画面（RGBA，已按选区裁剪） */
+export interface RecordFramePayload {
+  pixels: Uint8Array;
+  width: number;
+  height: number;
+  /** 录制起点起算的毫秒（已扣除暂停） */
+  at: number;
+}
+
+/** 主进程 -> 控制条：状态刷新（时间、阶段） */
+export interface RecordStatusPayload {
+  phase: 'recording' | 'paused' | 'stopping';
+  elapsedMs: number;
+  frames: number;
+}
+
+/** 主进程 -> 控制条：开始编码（endAt 为录制结束时刻，用于最后一帧的显示时长） */
+export interface RecordEncodePayload {
+  endAt: number;
+}
+
+/** 控制条 -> 主进程：编码完成的结果，或失败原因 */
+export type RecordDonePayload =
+  | {
+      ok: true;
+      format: RecordFormat;
+      width: number;
+      height: number;
+      frames: number;
+      durationMs: number;
+      gif?: Uint8Array;
+      /** png-sequence：按时间顺序的 PNG 字节；delays[i] 为第 i 张的显示时长（毫秒） */
+      pngs?: Uint8Array[];
+      delays?: number[];
+    }
+  | { ok: false; error: string };

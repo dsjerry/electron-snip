@@ -48,6 +48,19 @@ export const CH = {
   /** 长图：控制条 -> 主 -> 小地图 快照 */
   scrollMinimap: 'snip:scroll:minimap',
 
+  /** 录制：控制条 -> 主 启动（取得参数，主进程随即开始抓帧） */
+  recordBoot: 'snip:record:boot',
+  /** 录制：控制条 -> 主 动作（暂停 / 继续 / 停止 / 取消） */
+  recordAction: 'snip:record:action',
+  /** 录制：主 -> 控制条 单帧画面 */
+  recordFrame: 'snip:record:frame',
+  /** 录制：主 -> 控制条 状态刷新 */
+  recordStatus: 'snip:record:status',
+  /** 录制：主 -> 控制条 开始编码 */
+  recordEncode: 'snip:record:encode',
+  /** 录制：控制条 -> 主 编码结果 */
+  recordDone: 'snip:record:done',
+
   pinBoot: 'snip:pin:boot',
   pinReady: 'snip:pin:ready',
   pinAction: 'snip:pin:action',

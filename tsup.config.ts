@@ -10,6 +10,8 @@ async function copyRendererHtml(): Promise<void> {
   // 长图的样式由 html 直接链接，不经过打包器，需要原样复制
   await copyFile('src/renderer/scroll/scroll.html', 'dist/renderer/scroll.html');
   await copyFile('src/renderer/scroll/scroll.css', 'dist/renderer/scroll.css');
+  await copyFile('src/renderer/record/record.html', 'dist/renderer/record.html');
+  await copyFile('src/renderer/record/record.css', 'dist/renderer/record.css');
 }
 
 // `clean` 由 npm 脚本统一做：多个配置并行构建时，各自清理 dist 会互相删产物
@@ -40,6 +42,7 @@ export default defineConfig([
       overlay: 'src/renderer/overlay/overlay.ts',
       pin: 'src/renderer/pin/pin.ts',
       scroll: 'src/renderer/scroll/scroll.ts',
+      record: 'src/renderer/record/record.ts',
     },
     format: ['iife'],
     platform: 'browser',
@@ -89,6 +92,17 @@ export default defineConfig([
     platform: 'node',
     target: 'node24',
     outDir: 'dist/scroll',
+    sourcemap: true,
+    dts: true,
+    external: ['electron', 'koffi'],
+  },
+  {
+    // 录制（子路径 electron-snip/record）：主进程模块，依赖 electron 与 koffi（可选）
+    entry: { record: 'src/record/index.ts' },
+    format: ['esm', 'cjs'],
+    platform: 'node',
+    target: 'node24',
+    outDir: 'dist/record',
     sourcemap: true,
     dts: true,
     external: ['electron', 'koffi'],

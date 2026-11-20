@@ -31,6 +31,14 @@ const api: SnipRendererApi = {
     export: (payload) => ipcRenderer.invoke(CH.overlayExport, payload),
     panel: (cb) => on(CH.overlayPanel, cb),
   },
+  record: {
+    boot: () => ipcRenderer.invoke(CH.recordBoot),
+    action: (payload) => ipcRenderer.invoke(CH.recordAction, payload),
+    frame: (cb) => on(CH.recordFrame, cb),
+    status: (cb) => on(CH.recordStatus, cb),
+    encode: (cb) => on(CH.recordEncode, cb),
+    done: (payload) => ipcRenderer.invoke(CH.recordDone, payload),
+  },
   scroll: {
     frame: (cb) => on(CH.scrollFrame, cb),
     action: (payload) => ipcRenderer.invoke(CH.scrollAction, payload),

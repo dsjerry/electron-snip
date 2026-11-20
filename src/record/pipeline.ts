@@ -27,5 +27,5 @@ export function buildGif(width: number, height: number, frames: StoredFrame[], e
     height,
   );
   const merged = dedupeFrames(q.frames, durations);
-  return new Uint8Array(encodeGif(width, height, { size: q.size, rgb: q.rgb }, merged, loops));
+  return encodeGif(width, height, { size: q.size, rgb: q.rgb }, merged, loops);
 }

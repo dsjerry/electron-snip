@@ -35,19 +35,21 @@ export interface GifFrame {
   indices: Uint8Array;
 }
 
-/** 拼接字节流的小工具（比一连串 push / 展开直观） */
+/**
+ * 拼接字节流的小工具（比一连串 push / 展开直观）。
+ * 只用 Uint8Array，不依赖 Node 的 Buffer：这段代码会在渲染进程里跑（编码在控制条完成）。
+ */
 class ByteSink {
-  private readonly chunks: Buffer[] = [];
+  private readonly chunks: Uint8Array[] = [];
   private length = 0;
 
   bytes(data: Uint8Array): void {
-    const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
-    this.chunks.push(buf);
-    this.length += buf.length;
+    this.chunks.push(data);
+    this.length += data.length;
   }
 
   u8(value: number): void {
-    this.chunks.push(Buffer.from([value & 0xff]));
+    this.chunks.push(Uint8Array.of(value & 0xff));
     this.length += 1;
   }
 
@@ -57,11 +59,17 @@ class ByteSink {
   }
 
   ascii(text: string): void {
-    this.bytes(Buffer.from(text, 'ascii'));
+    this.bytes(Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff));
   }
 
-  finish(): Buffer {
-    return Buffer.concat(this.chunks, this.length);
+  finish(): Uint8Array {
+    const out = new Uint8Array(this.length);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
   }
 }
 
@@ -135,7 +143,7 @@ function lzwEncode(indices: Uint8Array, minCodeSize: number): Uint8Array {
  * @param height 逻辑屏幕高度（像素）
  * @param loops  循环次数（0 = 无限循环）
  */
-export function encodeGif(width: number, height: number, palette: Palette, frames: GifFrame[], loops = 0): Buffer {
+export function encodeGif(width: number, height: number, palette: Palette, frames: GifFrame[], loops = 0): Uint8Array {
   if (width <= 0 || height <= 0) throw new Error('GIF 尺寸非法');
   if (frames.length === 0) throw new Error('GIF 没有帧');
   // 调色板长度必须与 size 严格一致：少给会让后面的块整体错位一字节，

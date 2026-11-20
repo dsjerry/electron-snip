@@ -10,6 +10,12 @@ import type {
   PinAction,
   PinActionResult,
   PinBootPayload,
+  RecordActionPayload,
+  RecordBootPayload,
+  RecordDonePayload,
+  RecordEncodePayload,
+  RecordFramePayload,
+  RecordStatusPayload,
   ScrollActionPayload,
   ScrollFramePayload,
   ScrollMinimapPayload,
@@ -52,6 +58,20 @@ export interface SnipRendererApi {
     export(payload: { kind: 'copy' | 'save'; png: Uint8Array }): Promise<PinActionResult>;
     /** 宿主动作的通用结果面板（loading / ok / error） */
     panel(cb: (payload: OverlayPanelPayload) => void): () => void;
+  };
+  record: {
+    /** 控制条启动：取得参数，主进程随即开始抓帧 */
+    boot(): Promise<RecordBootPayload | null>;
+    /** 控制条动作：暂停 / 继续 / 停止 / 取消 */
+    action(payload: RecordActionPayload): Promise<void>;
+    /** 主进程推送的单帧画面 */
+    frame(cb: (payload: RecordFramePayload) => void): () => void;
+    /** 主进程推送的状态（时长、阶段） */
+    status(cb: (payload: RecordStatusPayload) => void): () => void;
+    /** 主进程要求开始编码 */
+    encode(cb: (payload: RecordEncodePayload) => void): () => void;
+    /** 控制条回传编码结果 */
+    done(payload: RecordDonePayload): Promise<void>;
   };
   scroll: {
     /** 主进程推送的单帧画面（控制条） */

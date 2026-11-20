@@ -1,0 +1,80 @@
+/* 控制条：透明窗口里的圆角面板。窗口比可视区大一圈，给投影留空间 */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.bar {
+  box-sizing: border-box;
+  margin: 4px;
+  height: calc(100% - 8px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(28, 28, 30, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: #f2f2f7;
+  -webkit-app-region: drag;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+#time {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+#hint {
+  font-size: 12px;
+  color: rgba(242, 242, 247, 0.7);
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.actions button {
+  -webkit-app-region: no-drag;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #f2f2f7;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.actions button.primary {
+  background: #2f6fed;
+}
+
+.actions button.danger:hover:not(:disabled) {
+  background: #ff3b30;
+}
