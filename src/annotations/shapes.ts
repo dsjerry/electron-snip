@@ -571,8 +571,11 @@ export function isShapeHit(canvas: HTMLCanvasElement, shape: Shape, p: Point, to
   const hit = getScratch('hit', w, h);
   const hctx = scratchCtx(hit);
   if (!hctx) return false;
-  hctx.setTransform(1, 0, 0, 1, -x0, -y0);
+  // 先用单位变换清空检测框：若先平移再 clearRect，清除区域会被一起平移，
+  // 上一次检测残留的像素留在框里，会把远处的点误判为命中
+  hctx.setTransform(1, 0, 0, 1, 0, 0);
   hctx.clearRect(0, 0, w, h);
+  hctx.setTransform(1, 0, 0, 1, -x0, -y0);
   drawShape(hctx, shape);
   hctx.setTransform(1, 0, 0, 1, 0, 0);
   const { data } = hctx.getImageData(0, 0, w, h);

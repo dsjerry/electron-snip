@@ -760,10 +760,11 @@ export class Editor {
         this.beginChange();
         const idx = this.shapes.indexOf(this.editingOf);
         if (idx >= 0) this.shapes[idx] = this.editing as Shape;
-        this.selected = this.editing;
         console.log(`[editor] 调整标注 index=${idx} type=${this.editing.type}`);
         this.onHistoryChange?.();
       }
+      // 松手即取消选中：选中只服务于这一次拖动，下一次按下应当是新的绘制，而不是再次移动它
+      this.selected = null;
       this.editing = null;
       this.editingOf = null;
       this.editOrigin = null;
