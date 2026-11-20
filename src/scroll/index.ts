@@ -5,7 +5,7 @@ import { CH } from '../shared/channels';
 import type { ScrollActionPayload, ScrollMinimapPayload } from '../shared/types';
 import { handleScrollAction, onScrollMinimap } from './window';
 
-export { beginScrollCapture, cropShot, isScrolling, startScrollCapture, stopScrollCapture } from './window';
+export { beginScrollCapture, isScrolling, startScrollCapture, stopScrollCapture } from './window';
 export type { ScrollConfig, ScrollFinish } from './window';
 import type { ScrollFinish } from './window';
 
