@@ -3,9 +3,12 @@
 const { app, clipboard, globalShortcut, ipcMain, nativeImage } = require('electron');
 const { writeFileSync } = require('node:fs');
 const path = require('node:path');
-const { createSnipper } = require('electron-snip');
+const { createSnipper, ensureScreenCaptureAccess } = require('electron-snip');
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 启动即检查屏幕录制权限（仅 macOS）：未授权时弹出引导，而不是等到第一次截图才弹
+  if (!(await ensureScreenCaptureAccess())) console.log('请先授权屏幕录制权限，授权后重启应用');
+
   const snipper = createSnipper({
     preloadPath: require.resolve('electron-snip/preload'),
     rendererDir: path.dirname(require.resolve('electron-snip/renderer/overlay.html')),
