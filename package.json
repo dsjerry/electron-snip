@@ -28,6 +28,11 @@
       "types": "./dist/ocr/ocr.d.ts",
       "import": "./dist/ocr/ocr.js",
       "require": "./dist/ocr/ocr.cjs"
+    },
+    "./scroll": {
+      "types": "./dist/scroll/scroll.d.ts",
+      "import": "./dist/scroll/scroll.js",
+      "require": "./dist/scroll/scroll.cjs"
     }
   },
   "files": [
@@ -84,7 +89,13 @@
       ],
       "ocr": [
         "./dist/ocr/ocr.d.ts"
+      ],
+      "scroll": [
+        "./dist/scroll/scroll.d.ts"
       ]
     }
+  },
+  "optionalDependencies": {
+    "koffi": "3.3.2"
   }
 }

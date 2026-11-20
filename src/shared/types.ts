@@ -229,3 +229,32 @@ export interface PinActionResult {
 
 /** 默认保存格式（与保存框的扩展名一致） */
 export type SaveFormat = 'png' | 'jpg';
+
+/** 长图单帧：已按选区裁好的原始 RGBA 条带 */
+export interface ScrollFramePayload {
+  pixels: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/** 长图自动滚动速度 */
+export type ScrollSpeed = 'slow' | 'normal' | 'fast';
+
+/**
+ * 长图控制条的动作：
+ * - `start` 用户确认开始，开始抓帧；`auto` / `manual` 切换滚动方式；`speed` 切换速度
+ * - `bottom` 自动模式下渲染端判定已到底，主进程停止注入
+ * - `edit` / `copy` / `save` 随带拼接完成的 PNG 结束；`cancel` 收场
+ */
+export interface ScrollActionPayload {
+  kind: 'copy' | 'save' | 'cancel' | 'start' | 'auto' | 'manual' | 'bottom' | 'edit' | 'speed';
+  png?: Uint8Array;
+  speed?: ScrollSpeed;
+}
+
+/** 小地图快照：控制条合成的缩略图与当前视口框（缩略图像素行号） */
+export interface ScrollMinimapPayload {
+  png: Uint8Array;
+  viewTop: number;
+  viewHeight: number;
+}

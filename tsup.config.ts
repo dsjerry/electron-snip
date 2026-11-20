@@ -7,6 +7,9 @@ async function copyRendererHtml(): Promise<void> {
   for (const name of ['overlay', 'pin']) {
     await copyFile(`src/renderer/${name}/${name}.html`, `dist/renderer/${name}.html`);
   }
+  // 长图的样式由 html 直接链接，不经过打包器，需要原样复制
+  await copyFile('src/renderer/scroll/scroll.html', 'dist/renderer/scroll.html');
+  await copyFile('src/renderer/scroll/scroll.css', 'dist/renderer/scroll.css');
 }
 
 // `clean` 由 npm 脚本统一做：多个配置并行构建时，各自清理 dist 会互相删产物
@@ -36,6 +39,7 @@ export default defineConfig([
     entry: {
       overlay: 'src/renderer/overlay/overlay.ts',
       pin: 'src/renderer/pin/pin.ts',
+      scroll: 'src/renderer/scroll/scroll.ts',
     },
     format: ['iife'],
     platform: 'browser',
@@ -77,5 +81,16 @@ export default defineConfig([
     sourcemap: true,
     dts: true,
     external: ['electron'],
+  },
+  {
+    // 长图（子路径 electron-snip/scroll）：主进程模块，依赖 electron / koffi（Windows 自动滚动）
+    entry: { scroll: 'src/scroll/index.ts' },
+    format: ['esm', 'cjs'],
+    platform: 'node',
+    target: 'node24',
+    outDir: 'dist/scroll',
+    sourcemap: true,
+    dts: true,
+    external: ['electron', 'koffi'],
   },
 ]);

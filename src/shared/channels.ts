@@ -41,6 +41,13 @@ export const CH = {
   /** 主 -> 遮罩：通用结果面板（宿主动作的 loading / 结果 / 错误） */
   overlayPanel: 'snip:overlay:panel',
 
+  /** 长图：主 -> 控制条 单帧画面 */
+  scrollFrame: 'snip:scroll:frame',
+  /** 长图：控制条 -> 主 动作（开始 / 滚动 / 收场 / 导出） */
+  scrollAction: 'snip:scroll:action',
+  /** 长图：控制条 -> 主 -> 小地图 快照 */
+  scrollMinimap: 'snip:scroll:minimap',
+
   pinBoot: 'snip:pin:boot',
   pinReady: 'snip:pin:ready',
   pinAction: 'snip:pin:action',
