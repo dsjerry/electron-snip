@@ -6,6 +6,8 @@ import { forwardRendererLogs } from '../main/log';
 import { pointInRect } from '../shared/selection';
 import { CH } from '../shared/channels';
 import { cropShot } from '../shared/crop';
+import { placeBar } from '../shared/placement';
+import { log } from '../main/log';
 import type { DisplayShot, Rect, ScrollActionPayload, ScrollMinimapPayload, ScrollSpeed } from '../shared/types';
 
 /** 长图运行所需的路径：preload（用于控制条 / 小地图的 IPC）与渲染资源目录。 */
@@ -121,7 +123,7 @@ export function startScrollCapture(shot: DisplayShot, region: Rect, config: Scro
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.setContentProtection(true);
   forwardRendererLogs(bar, 'scroll');
-  const barRect = barBounds(region, d.bounds);
+  const barRect = placeBar(region, d.bounds, { width: BAR_WIDTH, height: BAR_HEIGHT });
   bar.setBounds(barRect);
 
   // ---- 小地图：贴选区旁的竖向缩略窗（放不下就不出，纯增益不挡路）
@@ -145,7 +147,7 @@ export function startScrollCapture(shot: DisplayShot, region: Rect, config: Scro
     .then(() => {
       if (!outline.isDestroyed()) outline.showInactive();
     })
-    .catch((err: unknown) => console.error('[scroll] 轮廓窗加载失败', err));
+    .catch((err: unknown) => log.error('[scroll] 轮廓窗加载失败', err));
   void loadScrollPage(bar, 'bar')
     .then(() => {
       if (!bar.isDestroyed()) {
@@ -153,9 +155,9 @@ export function startScrollCapture(shot: DisplayShot, region: Rect, config: Scro
         bar.focus();
       }
     })
-    .catch((err: unknown) => console.error('[scroll] 控制条加载失败', err));
+    .catch((err: unknown) => log.error('[scroll] 控制条加载失败', err));
 
-  console.log(
+  log.info(
     `[scroll] 启动滚动截图 display=${shot.displayId} region=${Math.round(region.width)}x${Math.round(region.height)}`,
   );
   return true;
@@ -169,7 +171,7 @@ export function beginScrollCapture(): boolean {
   const s = state;
   if (!s || s.timer) return false;
   s.timer = setInterval(() => void grabFrame(), FRAME_INTERVAL_MS);
-  console.log('[scroll] 开始抓帧');
+  log.info('[scroll] 开始抓帧');
   return true;
 }
 
@@ -183,7 +185,7 @@ export function stopScrollCapture(): void {
   for (const win of [s.bar, s.outline, s.minimap]) {
     if (win && !win.isDestroyed()) win.destroy();
   }
-  console.log('[scroll] 滚动截图已收起');
+  log.info('[scroll] 滚动截图已收起');
 }
 
 // ------------------------------------------------------------ 自动滚动
@@ -272,9 +274,19 @@ export async function startAutoScroll(): Promise<boolean> {
   // 注入器是 user32 专属 —— mac 上直接拒绝，别让 koffi.load 抛错
   if (process.platform !== 'win32') return false;
   if (auto || !state) return false;
-  const io = await prepareInjector();
-  const region = state.region;
-  const bar = state.barBounds;
+  const session = state;
+  let io: Awaited<ReturnType<typeof prepareInjector>>;
+  try {
+    io = await prepareInjector();
+  } catch (err) {
+    log.error('[scroll] 自动滚动不可用（koffi / user32 加载失败）', err);
+    return false;
+  }
+  // await 期间会话可能已被取消（或被重新开始）：此时不能再启动，否则留下没人清理的定时器，
+  // 并且 auto 残留会让之后的会话永远无法自动滚动
+  if (state !== session || auto) return false;
+  const region = session.region;
+  const bar = session.barBounds;
   // 启动时把光标放到选区中心一次（SetCursorPos 吃物理像素），
   // 之后光标完全归用户管 —— 注入与否只看光标当前在哪
   const center = screen.dipToScreenPoint({
@@ -301,7 +313,7 @@ export async function startAutoScroll(): Promise<boolean> {
     notches: AUTO_NOTCHES[autoSpeed],
     lastCursor: null,
   };
-  console.log(`[scroll] 自动滚动已启动（${autoSpeed}）`);
+  log.info(`[scroll] 自动滚动已启动（${autoSpeed}）`);
   return true;
 }
 
@@ -329,26 +341,10 @@ async function grabFrame(): Promise<void> {
     if (s.bar.isDestroyed()) return;
     s.bar.webContents.send(CH.scrollFrame, frame);
   } catch (err) {
-    console.error('[scroll] 抓帧失败', err);
+    log.error('[scroll] 抓帧失败', err);
   } finally {
     if (state === s) s.busy = false;
   }
-}
-
-function barBounds(region: Rect, display: Rect): Electron.Rectangle {
-  const x = Math.min(
-    Math.max(display.x + 8, Math.round(region.x + region.width / 2 - BAR_WIDTH / 2)),
-    display.x + display.width - BAR_WIDTH - 8,
-  );
-  // 默认贴选区下方；放不下翻上方，再不行贴屏底
-  let y = Math.round(region.y + region.height + 12);
-  if (y + BAR_HEIGHT > display.y + display.height) {
-    y = Math.round(region.y - BAR_HEIGHT - 12);
-  }
-  if (y < display.y) {
-    y = display.y + display.height - BAR_HEIGHT - 8;
-  }
-  return { x, y, width: BAR_WIDTH, height: BAR_HEIGHT };
 }
 
 /**
@@ -410,7 +406,7 @@ function ensureMinimapWindow(rect: Electron.Rectangle): BrowserWindow {
     .then(() => {
       if (!win.isDestroyed()) win.showInactive();
     })
-    .catch((err: unknown) => console.error('[scroll] 小地图加载失败', err));
+    .catch((err: unknown) => log.error('[scroll] 小地图加载失败', err));
   return win;
 }
 
@@ -480,7 +476,7 @@ export function handleScrollAction(
       return;
     case 'bottom':
       stopAutoScroll();
-      console.log('[scroll] 已到底部，自动滚动停止');
+      log.info('[scroll] 已到底部，自动滚动停止');
       return;
     case 'cancel':
       stopScrollCapture();

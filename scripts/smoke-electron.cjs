@@ -51,7 +51,8 @@ app.whenReady().then(async () => {
 
   const ov = new BrowserWindow({ show: false, width: 200, height: 100, webPreferences });
   const ovErrors = [];
-  ov.webContents.on('console-message', (_e, level, message) => {
+  ov.webContents.on('console-message', (event) => {
+    const { level, message } = event;
     if (level >= 2) ovErrors.push(message);
   });
   await ov.loadFile(path.join(dist, 'renderer', 'overlay.html'));
@@ -68,7 +69,8 @@ app.whenReady().then(async () => {
 
   const pin = new BrowserWindow({ show: false, width: 200, height: 100, webPreferences });
   const pinErrors = [];
-  pin.webContents.on('console-message', (_e, level, message) => {
+  pin.webContents.on('console-message', (event) => {
+    const { level, message } = event;
     if (level >= 2) pinErrors.push(message);
   });
   await pin.loadFile(path.join(dist, 'renderer', 'pin.html'));
@@ -84,7 +86,8 @@ app.whenReady().then(async () => {
   imagePinBoot = true;
   const imagePin = new BrowserWindow({ show: false, width: 40, height: 30, webPreferences });
   const imagePinErrors = [];
-  imagePin.webContents.on('console-message', (_e, level, message) => {
+  imagePin.webContents.on('console-message', (event) => {
+    const { level, message } = event;
     if (level >= 2) imagePinErrors.push(message);
   });
   await imagePin.loadFile(path.join(dist, 'renderer', 'pin.html'));

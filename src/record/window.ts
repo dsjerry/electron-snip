@@ -2,7 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import type { Display, WebContents } from 'electron';
 import path from 'node:path';
 import { captureDisplays } from '../main/capture';
-import { forwardRendererLogs } from '../main/log';
+import { forwardRendererLogs, log } from '../main/log';
 import { CH } from '../shared/channels';
 import { cropShot } from '../shared/crop';
 import type {
@@ -15,6 +15,7 @@ import type {
   RecordStatusPayload,
   Rect,
 } from '../shared/types';
+import { placeBar } from '../shared/placement';
 import { elapsedMs } from './timeline';
 
 /**
@@ -76,7 +77,6 @@ const DEFAULT_MAX_BYTES = 384 * 1024 * 1024;
 const STATUS_INTERVAL_MS = 250;
 const BAR_W = 440;
 const BAR_H = 96;
-const GAP = 12;
 
 interface Session {
   bar: BrowserWindow;
@@ -99,7 +99,6 @@ interface Session {
   busy: boolean;
   frameTimer: NodeJS.Timeout | null;
   statusTimer: NodeJS.Timeout | null;
-  maxTimer: NodeJS.Timeout | null;
   ready: boolean;
 }
 
@@ -107,18 +106,6 @@ let session: Session | null = null;
 
 export function isRecording(): boolean {
   return session !== null;
-}
-
-/** 控制条位置：默认贴选区下方，放不下翻到上方，再不行贴屏底；水平居中并夹在屏内。 */
-function barBounds(region: Rect, display: Rect): Electron.Rectangle {
-  const x = Math.min(
-    Math.max(display.x + 8, Math.round(region.x + region.width / 2 - BAR_W / 2)),
-    display.x + display.width - BAR_W - 8,
-  );
-  let y = Math.round(region.y + region.height + GAP);
-  if (y + BAR_H > display.y + display.height) y = Math.round(region.y - BAR_H - GAP);
-  if (y < display.y) y = display.y + display.height - BAR_H - 8;
-  return { x, y, width: BAR_W, height: BAR_H };
 }
 
 /**
@@ -131,7 +118,7 @@ export function startRecording(opts: RecordOptions, hooks: RecordHooks): boolean
   if (!display) return false;
 
   const bar = new BrowserWindow({
-    ...barBounds(opts.region, display.bounds),
+    ...placeBar(opts.region, display.bounds, { width: BAR_W, height: BAR_H }),
     frame: false,
     show: false,
     resizable: false,
@@ -174,7 +161,6 @@ export function startRecording(opts: RecordOptions, hooks: RecordHooks): boolean
     busy: false,
     frameTimer: null,
     statusTimer: null,
-    maxTimer: null,
     ready: false,
   };
 
@@ -187,11 +173,11 @@ export function startRecording(opts: RecordOptions, hooks: RecordHooks): boolean
   void bar.loadFile(path.join(opts.config.rendererDir, 'record.html')).catch((err: unknown) => {
     // 窗口被提前销毁（如取消）时加载也会以 ERR_FAILED 拒绝，此时会话已经收场，不要重复处理
     if (bar.isDestroyed()) return;
-    console.error('[record] 控制条加载失败', err);
+    log.error('[record] 控制条加载失败', err);
     endSession(self, 'record-load-failed', null);
   });
   bar.once('ready-to-show', () => bar.showInactive());
-  console.log(
+  log.info(
     `[record] 开始录制 display=${opts.shot.displayId} region=${Math.round(opts.region.width)}x${Math.round(opts.region.height)}`,
   );
   return true;
@@ -203,8 +189,7 @@ export function bootRecording(sender: WebContents): RecordBootPayload | null {
   if (!s || s.bar.webContents.id !== sender.id) return null;
   if (!s.ready) {
     s.ready = true;
-    s.statusTimer = setInterval(() => pushStatus(s), STATUS_INTERVAL_MS);
-    s.maxTimer = setTimeout(() => void stopRecording('max-duration'), s.maxDurationMs);
+    s.statusTimer = setInterval(() => tick(s), STATUS_INTERVAL_MS);
     scheduleFrame(s);
   }
   return {
@@ -254,10 +239,16 @@ async function grabFrame(s: Session): Promise<void> {
     s.frames++;
     s.bar.webContents.send(CH.recordFrame, payload);
   } catch (err) {
-    console.error('[record] 抓帧失败', err);
+    log.error('[record] 抓帧失败', err);
   } finally {
     s.busy = false;
   }
+}
+
+/** 心跳：推送状态，并在录制时间（扣除暂停）超过上限时停止。 */
+function tick(s: Session): void {
+  pushStatus(s);
+  if (s.phase === 'recording' && now(s) >= s.maxDurationMs) void stopRecording('max-duration');
 }
 
 function pushStatus(s: Session): void {
@@ -299,7 +290,7 @@ export function handleRecordAction(sender: WebContents, payload: RecordActionPay
 async function stopRecording(reason: string): Promise<void> {
   const s = session;
   if (!s || s.phase === 'stopping') return;
-  console.log(`[record] 停止录制（${reason}）frames=${s.frames}`);
+  log.info(`[record] 停止录制（${reason}）frames=${s.frames}`);
   if (s.pausedAt !== null) {
     s.pausedTotal += performance.now() - s.pausedAt;
     s.pausedAt = null;
@@ -322,7 +313,7 @@ export function finishRecording(sender: WebContents, payload: RecordDonePayload)
   if (!s || s.bar.webContents.id !== sender.id) return;
   // 推迟收场：销毁控制条必须在回复 invoke 之后，否则回复会落在已销毁的 webContents 上
   if (!payload.ok) {
-    console.error('[record] 编码失败', payload.error);
+    log.error('[record] 编码失败', payload.error);
     setTimeout(() => endSession(s, 'record-encode-failed', null), 0);
     return;
   }
@@ -356,11 +347,10 @@ function endSession(target: Session, cancelReason: string | null, result: Record
   session = null;
   stopFrameTimer(target);
   if (target.statusTimer) clearInterval(target.statusTimer);
-  if (target.maxTimer) clearTimeout(target.maxTimer);
   if (!target.bar.isDestroyed()) target.bar.destroy();
   if (result) {
     void Promise.resolve(target.hooks.onFinish(result)).catch((err: unknown) =>
-      console.error('[record] onFinish 失败', err),
+      log.error('[record] onFinish 失败', err),
     );
   } else if (cancelReason) {
     target.hooks.onCancel(cancelReason);

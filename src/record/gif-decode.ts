@@ -135,12 +135,3 @@ export function decodeLzw(data: Uint8Array, minCodeSize: number, pixelCount = 0)
     if (pixelCount > 0 && written >= pixelCount) return { indices: out, ended: 'eoi' };
   }
 }
-
-/** 把连续字节流切成 GIF 子块（每块 ≤ 255 字节） */
-export function splitSubBlocks(data: Uint8Array): Uint8Array[] {
-  const blocks: Uint8Array[] = [];
-  for (let i = 0; i < data.length; i += 255) {
-    blocks.push(data.subarray(i, Math.min(i + 255, data.length)));
-  }
-  return blocks;
-}

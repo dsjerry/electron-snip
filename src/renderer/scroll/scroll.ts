@@ -18,7 +18,7 @@ import { toClamped } from '../../shared/bytes';
  * 「复制 / 保存」把累积缓冲一次性转成 PNG 交给主进程。只支持向下
  * 滚动 —— 向上滚的帧找不到探针自然丢弃。
  *
- * 本入口有**两个角色**（URL hash 分发，见 `scroll-capture.ts` 的
+ * 本入口有**两个角色**（URL hash 分发，见 `scroll/window.ts` 的
  * loadScrollPage）：`#bar` = 控制条（拼接 + UI），`#minimap` = 贴在
  * 选区旁的小地图窗（只画快照）。拼接状态只在控制条进程里，小地图
  * 收到的现成缩略图由控制条经主进程转发（scroll:minimap）。
@@ -433,7 +433,7 @@ function startBar(): void {
 /**
  * 小地图角色（scroll.html#minimap）：贴在选区旁的竖向缩略窗，只画控制条
  * 转发来的快照 —— 缩略图 + 当前视口框。窗口整窗点击穿透且 focusable:false
- * （见 scroll-capture.ts），这里没有任何交互要处理。
+ * （见 scroll/window.ts），这里没有任何交互要处理。
  */
 function startMinimap(): void {
   // 控制条那套 UI 在本窗口没有意义：整块藏掉

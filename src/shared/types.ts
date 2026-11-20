@@ -134,7 +134,6 @@ export interface OverlaySelectionPayload {
 }
 
 /** 遮罩工具条的内置动作；宿主注册的动作以其 id 调用，不在此列。 */
-export type BuiltinOverlayAction = 'pin' | 'cancel' | 'copy' | 'save';
 
 export interface OverlayComposePayload {
   shots: DisplayShot[];
