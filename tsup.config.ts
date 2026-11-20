@@ -67,4 +67,15 @@ export default defineConfig([
     sourcemap: true,
     dts: true,
   },
+  {
+    // 系统 OCR（子路径 electron-snip/ocr）：主进程用，依赖 electron 的 app 取临时目录
+    entry: { ocr: 'src/ocr/index.ts' },
+    format: ['esm', 'cjs'],
+    platform: 'node',
+    target: 'node24',
+    outDir: 'dist/ocr',
+    sourcemap: true,
+    dts: true,
+    external: ['electron'],
+  },
 ]);

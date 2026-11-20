@@ -23,6 +23,11 @@
     "./utils": {
       "types": "./dist/utils/utils.d.ts",
       "import": "./dist/utils/utils.js"
+    },
+    "./ocr": {
+      "types": "./dist/ocr/ocr.d.ts",
+      "import": "./dist/ocr/ocr.js",
+      "require": "./dist/ocr/ocr.cjs"
     }
   },
   "files": [
@@ -76,6 +81,9 @@
       ],
       "utils": [
         "./dist/utils/utils.d.ts"
+      ],
+      "ocr": [
+        "./dist/ocr/ocr.d.ts"
       ]
     }
   }
