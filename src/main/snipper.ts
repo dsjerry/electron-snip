@@ -1129,12 +1129,12 @@ export function createSnipper(opts: SnipOptions): Snipper {
 
   function teardown(reason: string, notify: boolean): void {
     const s = session;
+    session = null;
     if (s) log.info(`[snip] 结束截图 (${reason}) phase=${s.phase} handedOff=${s.handedOff}`);
     if (s && notify) {
       opts.onCancel?.(reason);
       if (!s.handedOff) s.pick?.onCancel?.(reason);
     }
-    session = null;
     if (readyTimer) {
       clearTimeout(readyTimer);
       readyTimer = null;
