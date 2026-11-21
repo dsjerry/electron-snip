@@ -24,7 +24,7 @@ import type {
   SnipPhase,
   ToolId,
 } from '../shared/types';
-import type { SnipActionContext, SnipAction, SnipOptions, Snipper } from '../types';
+import type { PickOptions, SnipActionContext, SnipAction, SnipOptions, Snipper } from '../types';
 import { captureDisplays, displayAtCursor } from './capture';
 import { ensureScreenCaptureAccess } from './permission';
 import { listWindowRects } from './windows';
@@ -83,6 +83,10 @@ interface Session {
   /** 光标下按 z 序排列的全部窗口（Tab 轮换用） */
   hoverCandidates: Rect[];
   hoverIndex: number;
+  /** pick 模式：确认后移交宿主，不进工具条 / 导出 */
+  pick: PickOptions | null;
+  /** 已移交给宿主：遮罩已收起，等宿主 release() */
+  handedOff: boolean;
   /** 会话创建时刻，用于「触发 → 首窗 ready」的总耗时打点 */
   startedAt: number;
   /** 来源应用：会话开始时的前台窗口 owner 名（随导出事件回传） */
@@ -182,7 +186,7 @@ export function createSnipper(opts: SnipOptions): Snipper {
 
   /** 工具条挂哪块屏：选区中心所在屏；中心落在屏间空隙就退回光标所在屏。 */
   function toolbarDisplayFor(s: Session): number | null {
-    if (s.phase !== 'adjusting' || !s.selection) return null;
+    if (s.pick || s.phase !== 'adjusting' || !s.selection) return null;
     const sel = s.selection;
     const center = { x: sel.x + sel.width / 2, y: sel.y + sel.height / 2 };
     const displays = screen.getAllDisplays();
@@ -363,7 +367,11 @@ export function createSnipper(opts: SnipOptions): Snipper {
 
   // ---------------------------------------------------------------- 截图会话
 
-  async function start(): Promise<void> {
+  async function beginSession(pickOpts: PickOptions | null): Promise<void> {
+    if (session?.handedOff) {
+      log.warn('[snip] 已有移交给宿主的会话，忽略新的截图请求');
+      return;
+    }
     if (session) cancel('restart');
 
     // macOS 10.15+ 抓屏受「屏幕录制」权限管，缺失时截出来只有桌面壁纸 ——
@@ -423,6 +431,8 @@ export function createSnipper(opts: SnipOptions): Snipper {
       hoverErrorLogged: false,
       hoverCandidates: [],
       hoverIndex: 0,
+      pick: pickOpts,
+      handedOff: false,
       startedAt: performance.now(),
     };
 
@@ -599,6 +609,10 @@ export function createSnipper(opts: SnipOptions): Snipper {
         if (!hasRealSelection(s.selection)) {
           s.selection = fullDisplayAt(screen.getCursorScreenPoint());
         }
+        if (s.pick) {
+          handOff(s, s.pick);
+          break;
+        }
         // 主流语义：双击 / Enter = **复制**（不是「确认进钉图」）
         requestExport('copy');
         break;
@@ -703,6 +717,20 @@ export function createSnipper(opts: SnipOptions): Snipper {
    */
   function requestExport(kind: 'copy' | 'save'): void {
     void runExport(kind);
+  }
+
+  /** pick 模式的确认：收起遮罩但保留会话（宿主流程期间隐藏的宿主窗口不恢复），由宿主 release() 收尾。 */
+  function handOff(s: Session, pick: PickOptions): void {
+    const sel = s.selection;
+    if (!sel) return;
+    const found = bestRegionOnDisplay(s.shots, sel);
+    if (!found) {
+      log.warn('[snip] 移交失败：选区不在任何已截取的屏上');
+      return;
+    }
+    s.handedOff = true;
+    hideOverlays();
+    pick.onPick({ shot: s.shots[found.index], region: found.region, sourceApp: s.sourceApp });
   }
 
   async function runExport(kind: 'copy' | 'save'): Promise<void> {
@@ -1091,9 +1119,21 @@ export function createSnipper(opts: SnipOptions): Snipper {
   }
 
   function cancel(reason = 'manual'): void {
+    teardown(reason, true);
+  }
+
+  /** 收尾已移交的会话：不回调 onCancel（宿主流程正常结束）。 */
+  function release(): void {
+    teardown('released', false);
+  }
+
+  function teardown(reason: string, notify: boolean): void {
     const s = session;
-    if (s) log.info(`[snip] 取消截图 (${reason}) phase=${s.phase}`);
-    if (s) opts.onCancel?.(reason);
+    if (s) log.info(`[snip] 结束截图 (${reason}) phase=${s.phase} handedOff=${s.handedOff}`);
+    if (s && notify) {
+      opts.onCancel?.(reason);
+      if (!s.handedOff) s.pick?.onCancel?.(reason);
+    }
     session = null;
     if (readyTimer) {
       clearTimeout(readyTimer);
@@ -1152,8 +1192,10 @@ export function createSnipper(opts: SnipOptions): Snipper {
   };
 
   return {
-    start,
+    start: () => beginSession(null),
+    pick: (options: PickOptions) => beginSession(options),
     cancel,
+    release,
     pinImage,
     closePins: () => pins.closeAll(),
     setPinsMouseIgnore: (ignore: boolean) => pins.setIgnoreAll(ignore),

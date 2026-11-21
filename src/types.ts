@@ -30,6 +30,14 @@ export interface SnipAction {
   run(ctx: SnipActionContext): void | Promise<void>;
 }
 
+/** pick 模式：框选确认后不进工具条，而是把选区移交给宿主（如录制、长图的入口）。 */
+export interface PickOptions {
+  /** 用户确认选区（回车 / 双击）：遮罩已收起，宿主在此启动后续流程，结束时调用 `release()` */
+  onPick(pick: { shot: DisplayShot; region: Rect; sourceApp?: string }): void;
+  /** 框选阶段取消（Esc、右键等）；移交之后的取消走 `onCancel` */
+  onCancel?(reason: string): void;
+}
+
 export interface SnipExportEvent {
   kind: 'copy' | 'save';
   png: Uint8Array;
@@ -80,6 +88,10 @@ export interface Snipper {
   closePins(): number;
   /** 解除（ignore = false）或开启全部贴图的鼠标点击穿透 */
   setPinsMouseIgnore(ignore: boolean): void;
+  /** 框选后移交给宿主：确认选区即调用 `options.onPick`，不显示工具条 */
+  pick(options: PickOptions): Promise<void>;
+  /** 结束已移交的会话并恢复宿主窗口，不触发 `onCancel`（宿主流程正常结束时用） */
+  release(): void;
   /** 结束会话并释放所有窗口 */
   dispose(): void;
 }

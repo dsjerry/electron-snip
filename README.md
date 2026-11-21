@@ -102,7 +102,25 @@ A complete runnable example is in [`examples/basic`](./examples/basic) (`npm run
 
 `ctx`（动作上下文）提供：`selection`、`shots`、`sourceApp`、`pickSingleDisplay()`（选区落在单屏时返回 `{ shot, region }`）、`hideOverlays()`、`end(reason?)`、`showResult(payload)`。
 
-`Snipper` 方法：`start()`、`cancel(reason?)`、`install(ipcMain)`（返回卸载函数）、`pinImage(png, { editMode? })`、`closePins()`、`setPinsMouseIgnore(ignore)`、`dispose()`。
+`Snipper` 方法：`start()`、`pick(options)`、`cancel(reason?)`、`release()`、`install(ipcMain)`（返回卸载函数）、`pinImage(png, { editMode? })`、`closePins()`、`setPinsMouseIgnore(ignore)`、`dispose()`。
+
+### 框选后移交 · `pick(options)`
+
+只框选、不进工具条：回车或双击确认后，遮罩收起，选区交给宿主（如录制、长图的入口）。
+
+```ts
+snipper.pick({
+  onPick({ shot, region, sourceApp }) {
+    // 宿主流程开始；结束时必须调用 snipper.release()
+  },
+  onCancel(reason) {
+    // 框选阶段取消（Esc 等）；移交之后的取消走 createSnipper 的 onCancel
+  },
+});
+```
+
+- 同一时间只能有一个移交中的会话；移交期间再次 `pick` / `start` 会被忽略。
+- `release()` 恢复被隐藏的窗口且不触发 `onCancel`；`cancel()` 会触发 `onCancel`。
 
 ### 长图 · `electron-snip/scroll`
 

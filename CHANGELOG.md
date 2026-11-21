@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 新增 `Snipper.pick(options)`：框选后不进工具条，确认选区直接移交宿主；配套 `release()` 结束移交。
 - 新增子路径：`electron-snip/ocr`（系统 OCR）、`electron-snip/scroll`（长图）、`electron-snip/record`（录制 GIF / PNG 序列）、`electron-snip/utils`、`electron-snip/annotations`。
 - 修复长图：自动滚动在注入器加载期间被取消时可能访问已清空的状态，并残留定时器阻断之后的自动滚动；注入器加载失败改为记录日志而非抛错。
 - 修复录制：最长时长按录制时间（扣除暂停）计算，不再按墙上时钟提前截断；会话收场按会话身份判断，避免异步回调误杀下一次录制。
