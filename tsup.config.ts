@@ -67,7 +67,8 @@ export default defineConfig([
   {
     // 浏览器可用的小工具（子路径 electron-snip/utils）
     entry: { utils: 'src/utils/index.ts' },
-    format: ['esm'],
+    // 主进程（CJS 宿主）也会用到 cropShot 等纯函数，所以同时产出 CJS
+    format: ['esm', 'cjs'],
     platform: 'browser',
     target: 'es2022',
     outDir: 'dist/utils',

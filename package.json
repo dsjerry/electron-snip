@@ -22,7 +22,8 @@
     "./annotations.css": "./dist/annotations/annotations.css",
     "./utils": {
       "types": "./dist/utils/utils.d.ts",
-      "import": "./dist/utils/utils.js"
+      "import": "./dist/utils/utils.js",
+      "require": "./dist/utils/utils.cjs"
     },
     "./ocr": {
       "types": "./dist/ocr/ocr.d.ts",
