@@ -2,12 +2,15 @@ import type { ScrollFramePayload, ScrollSpeed } from '../../shared/types';
 import {
   alignFrame,
   appendRange,
+  estimateStickyBottom,
   frameDiff,
   MATCH_THRESHOLD,
   PROBE_ROWS,
-  probeStartFor,
+  PROBE_SPAN,
   rowSig,
+  selectProbe,
   STABLE_EPSILON,
+  verifyProbe,
 } from '../../scroll/match';
 import { toClamped } from '../../shared/bytes';
 
@@ -15,17 +18,20 @@ import { toClamped } from '../../shared/bytes';
  * 滚动截长图的拼接器（控制条渲染进程）。
  *
  * 主进程每 250ms 推来一帧选区条带（RGBA），这里把它拼进累积缓冲：
- * - 行签名：每行按 64 列采样亮度，作为该行的指纹；
- * - 探针匹配：取累积缓冲**底部** PROBE_ROWS 行（当前最新内容）作探针，
- *   在新帧**任意位置**搜索对齐 —— 不能假设「帧顶对帧底」：窗口捕获
- *   整窗采纳的选区带着静止的标题栏 / 工具栏，内容在框架之下滚动。
- *   平均行差超过阈值视为没对上（滚动动画中间帧等），整帧丢弃；
- * - 追加：探针之后的行写进累积缓冲，同步喂给小地图的迷你缩略缓冲
- *   （见 appendStrip）。
+ * - **运动判定**：相邻帧像素差标出「画面在动」—— 不做追加闸门（连续滚动时
+ *   帧帧都在动，挡下等于丢内容，坏帧由对齐阈值过滤），运动帧对只用于
+ *   吸底估计与首帧建缓冲的时机；
+ * - **吸底固定带检测**：运动帧对里底部连续没动的行 = 固定 UI（吸底工具条
+ *   等），对齐与追加只在帧的内容区进行，固定带不进长图；
+ * - **探针匹配**：从累积缓冲内容区末尾的候选带里挑**方差最高**的行做探针
+ *   （纯色 / 低对比行在重复内容里处处「完美匹配」，是拼重的头号来源），
+ *   在新帧内容区任意位置对齐，再用更靠上的**第二段探针互证**（见 match.ts）；
+ * - **追加**：对齐锚点之后的新内容写进累积缓冲，同步喂给小地图的迷你
+ *   缩略缓冲（见 appendStrip）。
  *
- * 用户滚动鼠标滚轮（手动）或程序注入滚轮（自动），内容越来越长；
- * 「复制 / 保存」把累积缓冲一次性转成 PNG 交给主进程。只支持向下
- * 滚动 —— 向上滚的帧找不到探针自然丢弃。
+ * 用户滚动鼠标滚轮（手动）或程序注入滚轮（自动，mac / Windows 都支持），
+ * 内容越来越长；「复制 / 保存」把累积缓冲一次性转成 PNG 交给主进程。
+ * 只支持向下滚动 —— 向上滚的帧找不到探针自然丢弃。
  *
  * 本入口有**两个角色**（URL hash 分发，见 `scroll/window.ts` 的
  * loadScrollPage）：`#bar` = 控制条（拼接 + UI），`#minimap` = 贴在
@@ -39,21 +45,21 @@ const ROLE: 'bar' | 'minimap' = location.hash === '#minimap' ? 'minimap' : 'bar'
 const IDLE_HINT_FRAMES = 8;
 /** 探针连续失配这么多帧后提示用户放慢。失配的帧一律丢弃，不追加任何内容 */
 const DESYNC_HINT_FRAMES = 2;
-/**
- * 连续运动帧的放行上限：滚动动画 / 手动快滚的中间帧先挡掉，但**长视频区**
- * 永远不会稳定 —— 挡满这么多帧（250ms 一帧 ≈ 4 秒）后放行，交给对齐阈值
- * 把关，否则视频区域一行都拼不出来。
- */
-const MOTION_FALLBACK_FRAMES = 16;
 
 /** 当前探针失配的连续帧数（成功追加或完美对齐都会清零） */
 let desyncFrames = 0;
-/** 上一帧像素：稳定判定（frameDiff）用 */
+/** 上一帧像素：运动判定（frameDiff）用 —— 吸底估计与首帧建缓冲都依赖运动帧对 */
 let prevStrip: Uint8ClampedArray | null = null;
-/** 连续运动帧计数；出现稳定帧即清零 */
-let motionRun = 0;
-/** 本帧是否因画面运动被挡下（提示用；放行兜底生效时不提示） */
-let motionGated = false;
+/**
+ * 已确认的吸底固定带高度（物理行）。取历史估计的最大值：多扣的行下一帧
+ * 视口还盖得住、会补回来；少扣会把固定带反复拼进长图，错误不可自愈。
+ */
+let stickyF = 0;
+/**
+ * 累积缓冲建立前的最新一帧：吸底带高度要等第一对运动帧才知道，用户在
+ * 开始滚动之前就点「复制 / 保存」时，用它兜底导出（固定带 unknowingly 入图）。
+ */
+let fallbackFrame: { pixels: Uint8ClampedArray; width: number; height: number } | null = null;
 
 interface Accum {
   /** 缓冲始终由本地 new 创建（非共享内存），导出时 subarray 零拷贝喂 ImageData */
@@ -80,7 +86,6 @@ const HINT_DEFAULT = '滚动鼠标滚轮追加内容';
 const HINT_AUTO = '自动滚动中，移出选区即暂停';
 const HINT_BOTTOM = '已到底部，可复制 / 保存';
 const HINT_IDLE = '未检测到新内容，可点击复制 / 保存';
-const HINT_MOTION = '正在等待画面稳定…';
 const HINT_DESYNC = '滚动过快没对上，请向上滚回一点再继续';
 
 /**
@@ -158,15 +163,13 @@ function startBar(): void {
     hintEl.textContent =
       mode === 'auto' && bottomNotified
         ? HINT_BOTTOM
-        : motionGated
-          ? HINT_MOTION
-          : desyncFrames >= DESYNC_HINT_FRAMES
-            ? HINT_DESYNC
-            : idleFrames >= IDLE_HINT_FRAMES
-              ? HINT_IDLE
-              : mode === 'auto'
-                ? HINT_AUTO
-                : HINT_DEFAULT;
+        : desyncFrames >= DESYNC_HINT_FRAMES
+          ? HINT_DESYNC
+          : idleFrames >= IDLE_HINT_FRAMES
+            ? HINT_IDLE
+            : mode === 'auto'
+              ? HINT_AUTO
+              : HINT_DEFAULT;
   }
 
   function grow(): void {
@@ -294,8 +297,35 @@ function startBar(): void {
   window.snip.scroll.frame((frame: ScrollFramePayload) => {
     const strip = new Uint8ClampedArray(frame.pixels);
     const { width, height } = frame;
+    /** 吸底固定带的行数上限：固定 UI 超过视口 1/3 时对齐本身就不成立 */
+    const stickyCap = Math.floor(height / 3);
 
+    // 运动判定：不做追加闸门（连续滚动时帧帧都在动，挡下等于丢内容）——
+    // 坏帧交给对齐阈值过滤；运动帧对只服务于吸底估计与首帧建缓冲的时机
+    const motion = prevStrip ? frameDiff(prevStrip, strip, width, height) : 0;
+    const moving = motion > STABLE_EPSILON;
+
+    // 吸底固定带估计：只在**运动帧对**上做 —— 静止对分不清「没滚」和
+    // 「整条都是固定 UI」。取历史最大值（宁大勿小）：多扣的行下一帧视口
+    // 还盖得住、会补回来；少扣会把固定带反复拼进长图，错误不可自愈
+    if (moving && prevStrip) {
+      const est = estimateStickyBottom(prevStrip, strip, width, height, stickyCap);
+      stickyF = Math.min(stickyCap, Math.max(stickyF, est));
+    }
+    const firstStrip = prevStrip;
+    prevStrip = strip;
+
+    // 首帧延迟入缓冲：吸底带高度必须由第一对运动帧测出，在那之前把首帧
+    // 存着（用户没滚动就导出走 fallbackFrame 兜底）。学到 stickyF 后按
+    // 内容区入缓冲，固定带不进长图；入缓冲后**继续走对齐**接新内容
     if (!acc) {
+      fallbackFrame = { pixels: strip, width, height };
+      if (!firstStrip || !moving) {
+        updateStatus();
+        return;
+      }
+      const content = height - stickyF;
+      if (content <= PROBE_SPAN + 4) return;
       acc = {
         data: new Uint8ClampedArray(width * Math.max(256, height * 4) * 4),
         width,
@@ -303,57 +333,56 @@ function startBar(): void {
         cap: Math.max(256, height * 4),
         sigs: [],
       };
-      appendStrip(strip, 0, height);
+      appendStrip(firstStrip, 0, content);
       viewTop = 0;
       viewHeight = height;
       idleFrames = 0;
-      prevStrip = strip;
+    }
+    if (width !== acc.width) return;
+    // 帧的内容区（扣除吸底固定带）：对齐与追加都只在这里进行
+    const contentHeight = height - stickyF;
+    // 极小选区：内容区装不下一个探针带（再往下签名访问会越界）
+    if (contentHeight <= PROBE_SPAN + 4 || acc.height < PROBE_ROWS) {
       updateStatus();
       return;
     }
-    if (width !== acc.width || height <= PROBE_ROWS + 4) return;
-    // 稳定门：滚动动画 / 快滚的中间帧直接挡下 —— 中间帧既对不准也不该追加。
-    // 连续运动超过 MOTION_FALLBACK_FRAMES 后放行（长视频区域永远不稳定，
-    // 不能一直挡），交给对齐阈值把关
-    const motion = prevStrip ? frameDiff(prevStrip, strip, width, height) : 0;
-    prevStrip = strip;
-    const stable = motion <= STABLE_EPSILON;
-    motionRun = stable ? 0 : motionRun + 1;
-    motionGated = !stable && motionRun <= MOTION_FALLBACK_FRAMES;
-    if (motionGated) {
-      updateStatus();
-      return;
-    }
-    // 极小选区：累积高度不足一个探针，无法匹配（再往下签名访问会越界）
-    if (acc.height < PROBE_ROWS) return;
 
-    // 探针 = 累积缓冲里越过贴底静止带的一段（见 BOTTOM_MARGIN），在**新帧
-    // 任意位置**定位它。不能用「帧顶对帧底」的重叠模型：窗口捕获整窗采纳
-    // 的选区带着静止的标题栏 / 工具栏，内容在框架之下滚动，帧顶永远不变，
-    // 旧模型会完全失配。探针之后（含边距）的行才是新内容；探针贴着
-    // 「帧底 - 边距」= 没有新内容。
-    const pStart = probeStartFor(acc!.height, height);
+    // 探针 = 累积缓冲**内容区末尾**一段带里方差最高的行，在新帧的内容区
+    // 任意位置定位它。不能用「帧顶对帧底」的重叠模型：选区带着静止的
+    // 标题栏 / 工具栏时内容在框架之下滚动，帧顶永远不变。
     const stripSigs: Float32Array[] = [];
-    for (let r = 0; r < height; r++) stripSigs.push(rowSig(strip, r, width));
-    const { bestT, best } = alignFrame(acc!, pStart, strip, stripSigs, height);
-    // 视口框：探针（acc 的 pStart 行）对上了 strip 的 bestT 行，所以
-    // strip 第 0 行对应 acc 的 pStart - bestT 行 —— 那正是当前屏幕内容
-    // 在长图里的位置（向上滚时它正确上移；bestT 是探针对位点，不是帧顶）
-    viewTop = Math.max(0, pStart - bestT);
+    for (let r = 0; r < contentHeight; r++) stripSigs.push(rowSig(strip, r, width));
+    const span = Math.min(PROBE_SPAN, acc.height);
+    const probe = selectProbe(acc.sigs, acc.height, span, PROBE_ROWS);
+    const { bestT, best } = alignFrame(acc, probe, strip, stripSigs, contentHeight);
+    // 双探针互证：更靠上的第二段高方差行按相对位置再验一次，
+    // 重复内容（表格 / 消息流 / feed）里主探针的假匹配在这里被否掉
+    let verified = true;
+    if (best <= MATCH_THRESHOLD) {
+      const secEnd = acc.height - span;
+      const secSpan = Math.min(PROBE_SPAN, secEnd);
+      if (secSpan >= PROBE_ROWS) {
+        const secondary = selectProbe(acc.sigs, secEnd, secSpan, PROBE_ROWS);
+        verified = verifyProbe(acc, probe, secondary, bestT, stripSigs, MATCH_THRESHOLD);
+      }
+    }
+    // 视口框：锚点行对上了 strip 的 bestT 行，所以 strip 第 0 行对应
+    // acc 的 anchor - bestT 行 —— 那是当前屏幕内容在长图里的位置
+    viewTop = Math.max(0, Math.min(acc.height, probe.anchor - bestT));
     viewHeight = height;
-    // 探针起点对齐到 strip 的 bestT 后，accum 的最后一行对应 strip 的
-    // bestT + (H - pStart) —— 之后才是真正的新内容（含被边距跳过的部分）
-    const { start: appendStart, rows: newRows } = appendRange(acc!.height, pStart, bestT, height);
-    if (best > MATCH_THRESHOLD) {
-      // 探针没对上：本帧丢弃，不追加任何内容（重同步追加会把已有段落再写一遍，
-      // 造成重复）。连续失配时提示用户放慢，滚动恢复对齐后会自动续接
+    if (best > MATCH_THRESHOLD || !verified) {
+      // 没对上 / 互证失败：本帧丢弃，不追加任何内容（错位追加会造成重复，
+      // 且不可自愈）。滚动恢复对齐后自动续接；持续失配提示用户往回滚
       desyncFrames++;
       updateStatus();
       return;
     }
     desyncFrames = 0;
+    // 锚点对上 bestT 后，acc 内容末尾对应 strip 的 bestT + (contentBottom -
+    // anchor)，到帧内容区末尾（contentHeight）之前都是新内容；固定带不在内
+    const { start: appendStart, rows: newRows } = appendRange(acc.height, probe.anchor, bestT, contentHeight);
     if (newRows <= 0) {
-      // 探针贴着帧底 = 完美对齐但没有新内容
+      // 探针贴着内容区末尾 = 完美对齐但没有新内容
       idleFrames++;
       // 自动模式下连续多帧无新内容 = 到底：通知主进程停止注入（只发一次）
       if (mode === 'auto' && !bottomNotified && idleFrames >= AUTO_BOTTOM_IDLE_FRAMES) {
@@ -379,6 +408,17 @@ function startBar(): void {
   }
 
   async function finish(kind: 'copy' | 'save' | 'edit'): Promise<void> {
+    // 用户没滚动过就导出：累积缓冲还没建立，用兜底帧（最近一帧）直接出图
+    if ((!acc || acc.height === 0) && fallbackFrame) {
+      acc = {
+        data: new Uint8ClampedArray(fallbackFrame.width * Math.max(256, fallbackFrame.height * 4) * 4),
+        width: fallbackFrame.width,
+        height: 0,
+        cap: Math.max(256, fallbackFrame.height * 4),
+        sigs: [],
+      };
+      appendStrip(fallbackFrame.pixels, 0, fallbackFrame.height);
+    }
     if (!acc || acc.height === 0) return;
     const canvas = document.createElement('canvas');
     canvas.width = acc.width;

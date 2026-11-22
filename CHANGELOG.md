@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 长图自动滚动支持 macOS：CGEvent 注入滚轮事件（与 Windows 的 SendInput 同一抽象，见 `scroll/injector.ts`），按视口比例步进；需要「辅助功能」权限，缺失时引导并回退手动模式。
+- 长图拼接加固：探针改为按行方差挑选的高对比行并加第二段探针互证（重复内容的假匹配不再拼进长图）；自动检测吸底固定带并在对齐 / 追加时剔除；失配提示改为「向上滚回一点再继续」。
 - 录制新增 MP4 输出：控制条渲染进程用 WebCodecs 编 H.264，配零依赖的手写 MP4 封装器（faststart）；编码器以 `buildMp4` 从浏览器可用的 `electron-snip/record/mp4` 导出，供宿主自绘控制条复用。
 - 新增 `Snipper.pick(options)`：框选后不进工具条，确认选区直接移交宿主；配套 `release()` 结束移交。
 - 新增子路径：`electron-snip/ocr`（系统 OCR）、`electron-snip/scroll`（长图）、`electron-snip/record`（录制 GIF / PNG 序列）、`electron-snip/utils`、`electron-snip/annotations`。

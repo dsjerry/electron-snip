@@ -140,7 +140,9 @@ installScroll(ipcMain, {
 // startScrollCapture(pick.shot, pick.region, { preloadPath, rendererDir });
 ```
 
-只支持单屏选区。点「长图」后需要用户点「开始」才开始抓帧。自动滚动仅 Windows 可用，依赖可选依赖 `koffi`。
+只支持单屏选区。点「长图」后需要用户点「开始」才开始抓帧。自动滚动 Windows 走 user32 注入、macOS 走 CGEvent 注入（需要「辅助功能」权限，缺失时弹引导框并回退手动），依赖可选依赖 `koffi`。
+
+拼接器（对照业界做法加固）：高方差行做探针 + 第二段探针互证，压制重复内容（表格 / 消息流）的假匹配；吸底固定带（悬浮工具条等）自动检测并在拼接时剔除；失配帧一律丢弃并提示，绝不把错位内容写进长图。
 
 ### 录制 · `electron-snip/record`
 
