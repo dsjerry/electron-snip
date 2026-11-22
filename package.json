@@ -5,44 +5,93 @@
   "type": "module",
   "license": "MIT",
   "author": "dsjerry",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsjerry/electron-snip.git"
+  },
+  "keywords": [
+    "electron",
+    "screenshot",
+    "screen-capture",
+    "annotation",
+    "scrolling-capture",
+    "screen-recording"
+  ],
   "main": "./dist/index.cjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./preload": "./dist/preload.cjs",
     "./renderer/*": "./dist/renderer/*",
     "./annotations": {
-      "types": "./dist/annotations/annotations.d.ts",
-      "import": "./dist/annotations/annotations.js"
+      "import": {
+        "types": "./dist/annotations/annotations.d.ts",
+        "default": "./dist/annotations/annotations.js"
+      },
+      "require": {
+        "types": "./dist/annotations/annotations.d.cts",
+        "default": "./dist/annotations/annotations.cjs"
+      }
     },
     "./annotations.css": "./dist/annotations/annotations.css",
     "./utils": {
-      "types": "./dist/utils/utils.d.ts",
-      "import": "./dist/utils/utils.js",
-      "require": "./dist/utils/utils.cjs"
+      "import": {
+        "types": "./dist/utils/utils.d.ts",
+        "default": "./dist/utils/utils.js"
+      },
+      "require": {
+        "types": "./dist/utils/utils.d.cts",
+        "default": "./dist/utils/utils.cjs"
+      }
     },
     "./ocr": {
-      "types": "./dist/ocr/ocr.d.ts",
-      "import": "./dist/ocr/ocr.js",
-      "require": "./dist/ocr/ocr.cjs"
+      "import": {
+        "types": "./dist/ocr/ocr.d.ts",
+        "default": "./dist/ocr/ocr.js"
+      },
+      "require": {
+        "types": "./dist/ocr/ocr.d.cts",
+        "default": "./dist/ocr/ocr.cjs"
+      }
     },
     "./scroll": {
-      "types": "./dist/scroll/scroll.d.ts",
-      "import": "./dist/scroll/scroll.js",
-      "require": "./dist/scroll/scroll.cjs"
+      "import": {
+        "types": "./dist/scroll/scroll.d.ts",
+        "default": "./dist/scroll/scroll.js"
+      },
+      "require": {
+        "types": "./dist/scroll/scroll.d.cts",
+        "default": "./dist/scroll/scroll.cjs"
+      }
     },
     "./record": {
-      "types": "./dist/record/record.d.ts",
-      "import": "./dist/record/record.js",
-      "require": "./dist/record/record.cjs"
+      "import": {
+        "types": "./dist/record/record.d.ts",
+        "default": "./dist/record/record.js"
+      },
+      "require": {
+        "types": "./dist/record/record.d.cts",
+        "default": "./dist/record/record.cjs"
+      }
     },
     "./record/mp4": {
-      "types": "./dist/record/mp4.d.ts",
-      "import": "./dist/record/mp4.js"
+      "import": {
+        "types": "./dist/record/mp4.d.ts",
+        "default": "./dist/record/mp4.js"
+      },
+      "require": {
+        "types": "./dist/record/mp4.d.cts",
+        "default": "./dist/record/mp4.cjs"
+      }
     }
   },
   "files": [

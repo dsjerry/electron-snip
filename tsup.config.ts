@@ -54,9 +54,10 @@ export default defineConfig([
     onSuccess: copyRendererHtml,
   },
   {
-    // 标注引擎：供宿主的录制控制条等页面复用（浏览器 ESM + 同名 CSS）
+    // 标注引擎：供宿主的录制控制条等页面复用（浏览器 ESM/CJS 双格式 + 同名 CSS）
+    // CJS 是给 node16/nodenext 的 require 型消费者的 —— exports 按条件分流到 .d.cts
     entry: { annotations: 'src/annotations/index.ts' },
-    format: ['esm'],
+    format: ['esm', 'cjs'],
     platform: 'browser',
     target: 'es2022',
     outDir: 'dist/annotations',
@@ -110,9 +111,10 @@ export default defineConfig([
   },
   {
     // MP4 编码（子路径 electron-snip/record/mp4）：纯浏览器可用（WebCodecs），
-    // 录制控制条与宿主渲染端共用；与上面的 node 构建同目录，文件名不冲突
+    // 录制控制条与宿主渲染端共用；与上面的 node 构建同目录，文件名不冲突。
+    // 补 CJS 产物：node16/nodenext 的 require 型消费者要按条件解析 .d.cts
     entry: { 'record/mp4': 'src/record/mp4.ts' },
-    format: ['esm'],
+    format: ['esm', 'cjs'],
     platform: 'browser',
     target: 'es2022',
     outDir: 'dist',
