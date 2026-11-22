@@ -31,28 +31,41 @@ export interface SnipHandlers {
 
 /** 把 SDK 的 IPC 通道注册到 ipcMain，返回卸载函数。 */
 export function installIpc(target: IpcMain, h: SnipHandlers): () => void {
-  target.handle(CH.overlayBoot, (e) => h.overlayBoot(e.sender));
-  target.handle(CH.overlayReady, (e) => h.overlayReady(e.sender));
-  target.handle(CH.overlayInput, (e, payload: OverlayInput) => h.overlayInput(e.sender, payload));
-  target.handle(CH.overlayTool, (e, payload: { tool: ToolId }) => h.overlayTool(e.sender, payload.tool));
-  target.handle(CH.overlayAction, (e, payload: { id: string }) => h.overlayAction(e.sender, payload.id));
-  target.handle(CH.overlayShapes, (e, payload: { shapes: Shape[] }) => h.overlayShapes(e.sender, payload.shapes));
-  target.handle(CH.overlayDraft, (e, payload: { draft: Shape | null }) => h.overlayDraft(e.sender, payload.draft));
-  target.handle(CH.overlayInFlight, (e, payload: { index: number | null }) =>
+  // 只摘**本函数注册**的通道：record / scroll 子路径会在同一个 ipcMain 上注册
+  // 自己的通道（electron-snip/record、/scroll 是可共存的子路径导出），卸载若
+  // 遍历整个 CH 表，会把兄弟模块的 handler 一起删掉，渲染端 invoke 全部静默报错
+  const registered: string[] = [];
+  const track = (channel: string): string => {
+    registered.push(channel);
+    return channel;
+  };
+
+  target.handle(track(CH.overlayBoot), (e) => h.overlayBoot(e.sender));
+  target.handle(track(CH.overlayReady), (e) => h.overlayReady(e.sender));
+  target.handle(track(CH.overlayInput), (e, payload: OverlayInput) => h.overlayInput(e.sender, payload));
+  target.handle(track(CH.overlayTool), (e, payload: { tool: ToolId }) => h.overlayTool(e.sender, payload.tool));
+  target.handle(track(CH.overlayAction), (e, payload: { id: string }) => h.overlayAction(e.sender, payload.id));
+  target.handle(track(CH.overlayShapes), (e, payload: { shapes: Shape[] }) =>
+    h.overlayShapes(e.sender, payload.shapes),
+  );
+  target.handle(track(CH.overlayDraft), (e, payload: { draft: Shape | null }) =>
+    h.overlayDraft(e.sender, payload.draft),
+  );
+  target.handle(track(CH.overlayInFlight), (e, payload: { index: number | null }) =>
     h.overlayInFlight(e.sender, payload.index),
   );
-  target.handle(CH.overlayEditState, (e, payload: { textEditing: boolean }) =>
+  target.handle(track(CH.overlayEditState), (e, payload: { textEditing: boolean }) =>
     h.overlayEditState(e.sender, payload.textEditing),
   );
-  target.handle(CH.overlayFocus, (e) => h.overlayFocus(e.sender));
-  target.handle(CH.overlayCopyText, (_e, payload: { text: string }) => h.overlayCopyText(payload.text));
-  target.handle(CH.overlayExport, (e, payload: { kind: 'copy' | 'save'; png: Uint8Array }) =>
+  target.handle(track(CH.overlayFocus), (e) => h.overlayFocus(e.sender));
+  target.handle(track(CH.overlayCopyText), (_e, payload: { text: string }) => h.overlayCopyText(payload.text));
+  target.handle(track(CH.overlayExport), (e, payload: { kind: 'copy' | 'save'; png: Uint8Array }) =>
     h.overlayExport(e.sender, payload.kind, payload.png),
   );
-  target.handle(CH.pinBoot, (e) => h.pinBoot(e.sender));
-  target.handle(CH.pinReady, (e) => h.pinReady(e.sender));
-  target.handle(CH.pinAction, (e, payload: PinAction) => h.pinAction(e.sender, payload));
+  target.handle(track(CH.pinBoot), (e) => h.pinBoot(e.sender));
+  target.handle(track(CH.pinReady), (e) => h.pinReady(e.sender));
+  target.handle(track(CH.pinAction), (e, payload: PinAction) => h.pinAction(e.sender, payload));
   return () => {
-    for (const ch of Object.values(CH)) target.removeHandler(ch);
+    for (const ch of registered) target.removeHandler(ch);
   };
 }

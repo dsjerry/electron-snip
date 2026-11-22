@@ -120,7 +120,7 @@ export function createSnipper(opts: SnipOptions): Snipper {
   let readyTimer: NodeJS.Timeout | null = null;
   /** 其余屏的抓屏 + 补窗；确认选区前要等它落地，否则拼接会缺一块 */
   let pendingRest: Promise<void> | null = null;
-  const pinReadyWaiters = new Map<number, () => void>();
+  const pinReadyWaiters = new Map<number, (ok: boolean) => void>();
   /** 独立图片贴图：等 renderer 来 pin:boot 取数据 */
   const pendingImages = new Map<number, { png: Buffer; width: number; height: number; editMode: boolean }>();
   let uninstallIpc: (() => void) | null = null;
@@ -142,6 +142,12 @@ export function createSnipper(opts: SnipOptions): Snipper {
       s.shotByContents.delete(contentsId);
       s.ready.delete(contentsId);
       s.overlays = s.overlays.filter((w) => !w.isDestroyed());
+    },
+    // 某块屏的遮罩渲染进程崩溃：页面已归零、按键与鼠标全部失效，用户那块屏
+    // 只剩 backgroundColor 的全屏黑块 —— 收场会话把黑窗藏掉，还给用户屏幕
+    onCrashed: (displayId) => {
+      log.error(`[snip] 遮罩渲染进程崩溃，收场会话 display=${displayId}`);
+      cancel('overlay-crashed');
     },
   };
 
@@ -961,8 +967,8 @@ export function createSnipper(opts: SnipOptions): Snipper {
       pinReadyWaiters.delete(pinId);
       settle();
     };
-    pinReadyWaiters.set(pinId, () => {
-      state.ok = true;
+    pinReadyWaiters.set(pinId, (ok) => {
+      state.ok = ok;
       settle();
     });
 
@@ -994,12 +1000,12 @@ export function createSnipper(opts: SnipOptions): Snipper {
     opts.onStateChange?.(false);
   }
 
-  /** renderer 拼接完成并调用 pin:ready 时，唤醒 confirmSnip 的等待。 */
+  /** renderer 拼接完成并调用 pin:ready 时，唤醒等待者（真就绪 → ok=true）。 */
   function markPinReady(sender: WebContents): void {
     const resolve = pinReadyWaiters.get(sender.id);
     if (resolve) {
       pinReadyWaiters.delete(sender.id);
-      resolve();
+      resolve(true);
     }
   }
 
@@ -1018,6 +1024,9 @@ export function createSnipper(opts: SnipOptions): Snipper {
   }
 
   async function pinImage(png: Uint8Array, o: { editMode?: boolean } = {}): Promise<void> {
+    // pin:boot 对 pendingImages 只在「无会话」时供货（onPinBoot 的守卫）——
+    // 会话进行中的调用必然拿不到数据，与其等 8 秒超时不如立刻如实失败
+    if (session) throw new Error('截图会话进行中，无法钉住独立图片');
     const img = nativeImage.createFromBuffer(Buffer.from(png));
     if (img.isEmpty()) throw new Error('图片数据为空');
     const { width, height } = img.getSize();
@@ -1033,13 +1042,32 @@ export function createSnipper(opts: SnipOptions): Snipper {
       height: h,
     };
     const pin = pins.create(bounds);
-    pendingImages.set(pin.webContents.id, { png: Buffer.from(png), width: w, height: h, editMode: !!o.editMode });
-    // 与截图钉住同一规则：renderer 拼好（这里是解码）后才显示，避免闪白
-    const ready = new Promise<void>((resolve) => pinReadyWaiters.set(pin.webContents.id, resolve));
-    await pins.load(pin);
-    await ready;
-    pinReadyWaiters.delete(pin.webContents.id);
-    if (!pin.isDestroyed()) pin.showInactive();
+    const pinId = pin.webContents.id;
+    pendingImages.set(pinId, { png: Buffer.from(png), width: w, height: h, editMode: !!o.editMode });
+    // 与截图钉住（confirmSnip）同一套护栏：ready / 超时 / 窗口关闭 三路赛跑。
+    // renderer 拿不到 boot、窗口被外部关闭、teardown 清场，都不能把调用方挂死
+    let settle: (ok: boolean) => void = () => {};
+    const finished = new Promise<boolean>((resolve) => {
+      settle = resolve;
+    });
+    pin.once('closed', () => settle(false));
+    pinReadyWaiters.set(pinId, (ok) => settle(ok));
+    const timer = setTimeout(() => settle(false), PIN_TIMEOUT_MS);
+    try {
+      // 与截图钉住同一规则：renderer 拼好（这里是解码）后才显示，避免闪白
+      await pins.load(pin);
+      const ok = await finished;
+      if (!ok || pin.isDestroyed()) throw new Error('贴图未就绪（窗口被关闭或超时）');
+      pin.showInactive();
+    } catch (err) {
+      // 失败路径把孤儿窗口收掉：show:false 的隐形 BrowserWindow 不关就是泄漏
+      if (!pin.isDestroyed()) pin.close();
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      pinReadyWaiters.delete(pinId);
+      pendingImages.delete(pinId);
+    }
   }
 
   /** renderer 调 pin:boot 时拿到拼接所需的全部数据。 */
@@ -1150,7 +1178,9 @@ export function createSnipper(opts: SnipOptions): Snipper {
       }
       if (s.pendingPin && !s.pendingPin.isDestroyed()) s.pendingPin.close();
     }
-    for (const resolve of pinReadyWaiters.values()) resolve();
+    // 清场不算「就绪」：confirmSnip 的 pin 已在上方关闭（isDestroyed 兜底），
+    // pinImage 的独立图片窗口据此走失败路径，不会把空窗 show 出来
+    for (const resolve of pinReadyWaiters.values()) resolve(false);
     pinReadyWaiters.clear();
 
     const hadSession = !!s;

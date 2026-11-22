@@ -12,6 +12,8 @@ export interface OverlayHooks {
   /** 返回 true 表示由会话处理，主进程才拦截这次按键；false 则放行给渲染进程（如文字框换行） */
   onKey(webContents: WebContents, kind: 'escape' | 'enter'): boolean;
   onClosed(contentsId: number): void;
+  /** 某块屏的遮罩渲染进程崩溃：会话必须收场，否则那块屏卡死在黑窗上 */
+  onCrashed(displayId: number): void;
 }
 
 export interface OverlayPoolOptions {
@@ -40,8 +42,16 @@ export class OverlayPool {
     if (cached && !cached.isDestroyed()) {
       // 显示器位置/分辨率可能变过，落一次 bounds
       cached.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
-      cached.reload();
-      return { win: cached, load: Promise.resolve() };
+      // 复用路径的重载失败必须有人接：原来是裸 reload()（类型就是 void，
+      // 错误只能走事件），rendererDir 配错等场景下第二次截图直接以
+      // unhandledRejection 崩掉宿主主进程。改用 loadFile 拿到 Promise，
+      // 就地记日志并作为 load 返回 —— 调用方的 catch 也还有机会处理
+      const load = cached.webContents
+        .loadFile(path.join(this.opts.rendererDir, 'overlay.html'))
+        .catch((err: unknown) => {
+          log.error(`[overlay:${shot.displayId}] 复用窗口重载失败`, err);
+        });
+      return { win: cached, load };
     }
     const win = this.create(shot);
     this.cache.set(shot.displayId, win);
@@ -114,9 +124,12 @@ export class OverlayPool {
     // 遮罩自身不能被别的截图工具截进去（Win10 build 19044 支持 WDA_EXCLUDEFROMCAPTURE）
     win.setContentProtection(true);
     forwardRendererLogs(win, `overlay:${shot.displayId}`);
-    // 渲染进程崩溃 / 无响应时遮罩会「卡死在屏幕上」，没有这行日志就只能瞎猜
+    // 渲染进程崩溃 / 无响应时遮罩会「卡死在屏幕上」，没有这行日志就只能瞎猜。
+    // 崩溃还要收场会话：页面已归零，按键拦截与鼠标都失效，剩下的只是
+    // backgroundColor 的全屏黑块 —— 不 cancel 的话那块屏等于死机
     win.webContents.on('render-process-gone', (_event, details) => {
       log.error(`[overlay:${shot.displayId}] 渲染进程退出 reason=${details.reason} exitCode=${details.exitCode}`);
+      this.hooks.onCrashed(shot.displayId);
     });
     win.on('unresponsive', () => {
       log.warn(`[overlay:${shot.displayId}] 窗口无响应`);

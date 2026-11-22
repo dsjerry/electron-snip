@@ -33,15 +33,22 @@ function normRect(x: number, y: number, w: number, h: number): { x: number; y: n
 /**
  * 画布在**当前变换下**的可见尺寸（DIP / CSS px）。
  *
- * 标注坐标单位跟随 ctx 的变换：遮罩把 ctx 缩放到 dpr，钉图 / 导出是恒等。
+ * 标注坐标单位跟随 ctx 的变换：遮罩把 ctx 缩放到 dpr，钉图 / 导出是恒等，
+ * 遮罩画**其余屏**的标注时还带一层原点平移（overlay 的 drawRemote）。
  * `ctx.canvas.width/height` 是 backing 像素，直接拿来钳制坐标在 dpr≠1 时
- * 会差一个 dpr 倍数 —— 必须先除回去。
+ * 会差一个 dpr 倍数 —— 必须换算回用户空间；平移分量（t.e/t.f）也得算进去，
+ * 否则正原点副屏上虚拟坐标被误判越界、负原点副屏上钳错方向。
  */
-function canvasSizeIn(ctx: CanvasRenderingContext2D): { w: number; h: number } {
+function viewportIn(ctx: CanvasRenderingContext2D): { x0: number; y0: number; x1: number; y1: number } {
   const t = ctx.getTransform();
   const kx = Math.abs(t.a) || 1;
   const ky = Math.abs(t.d) || 1;
-  return { w: Math.floor(ctx.canvas.width / kx), h: Math.floor(ctx.canvas.height / ky) };
+  return {
+    x0: -t.e / kx,
+    y0: -t.f / ky,
+    x1: (ctx.canvas.width - t.e) / kx,
+    y1: (ctx.canvas.height - t.f) / ky,
+  };
 }
 
 /**
@@ -259,8 +266,9 @@ export function measureTextBlock(
  *
  * 关键是**降的时候开平滑、升的时候关平滑** —— 反过来就只会得到模糊而不是色块。
  * 快照必须先做：不能把 canvas 画到自己身上。
- * 另外取样源矩形是 `drawImage` 的**源坐标**，不吃 ctx 变换 —— 遮罩的 ctx
- * 带 dpr 缩放，必须先乘回去，否则高 DPI 屏上糊的是错位一半的区域。
+ * 另外取样源矩形是 `drawImage` 的**源坐标**，不吃 ctx 变换 —— 必须用完整
+ * 矩阵换算（缩放 t.a + 平移 t.e）：遮罩的 ctx 带 dpr 缩放，漏乘回去在高 DPI
+ * 屏上糊的是错位一半的区域；远端投影还带原点平移，漏了就糊到错位内容。
  */
 function pixelatedRegion(
   ctx: CanvasRenderingContext2D,
@@ -276,13 +284,15 @@ function pixelatedRegion(
   const t = ctx.getTransform();
   const kx = t.a || 1;
   const ky = t.d || 1;
+  const sx = t.e + rx * kx;
+  const sy = t.f + ry * ky;
 
   const snap = getScratch('snap', rw, rh);
   const sctx = scratchCtx(snap);
   if (!sctx) return null;
   sctx.setTransform(1, 0, 0, 1, 0, 0);
   sctx.clearRect(0, 0, rw, rh);
-  sctx.drawImage(ctx.canvas, rx * kx, ry * ky, rw * kx, rh * ky, 0, 0, rw, rh);
+  sctx.drawImage(ctx.canvas, sx, sy, rw * kx, rh * ky, 0, 0, rw, rh);
 
   const tmp = getScratch('tmp', cols, rows);
   const tctx = scratchCtx(tmp);
@@ -316,8 +326,9 @@ function blurRegion(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
   const t = ctx.getTransform();
   const kx = t.a || 1;
   const ky = t.d || 1;
-  const sx = Math.max(0, Math.round((r.x - pad) * kx));
-  const sy = Math.max(0, Math.round((r.y - pad) * ky));
+  // 源/贴回矩形都要用完整矩阵换算（缩放 + 平移），见 pixelatedRegion 的说明
+  const sx = Math.max(t.e, Math.round((r.x - pad) * kx + t.e));
+  const sy = Math.max(t.f, Math.round((r.y - pad) * ky + t.f));
   const sw = Math.min(ctx.canvas.width - sx, Math.round((r.w + pad * 2) * kx));
   const sh = Math.min(ctx.canvas.height - sy, Math.round((r.h + pad * 2) * ky));
   if (sw < 1 || sh < 1) return;
@@ -335,18 +346,26 @@ function blurRegion(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
   ctx.clip();
   ctx.filter = `blur(${radius}px)`;
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(snap, 0, 0, sw, sh, sx / kx, sy / ky, sw / kx, sh / ky);
+  ctx.drawImage(snap, 0, 0, sw, sh, (sx - t.e) / kx, (sy - t.f) / ky, sw / kx, sh / ky);
   ctx.filter = 'none';
   ctx.restore();
 }
 
-/** 选区式马赛克：拖出来的矩形整体像素化。 */
+/**
+ * 选区式马赛克：拖出来的矩形整体像素化。
+ *
+ * 必须 normRect：编辑器的预览 / 命中判定都按包围盒（|w|）处理，这里若对
+ * 负宽高直接 return，向上 / 向左拖拽就会出现「松手后标注消失、却留下一个
+ * 看不见但点得到的幽灵标注」。钳制用 viewportIn 而不是 [0, size]：远端
+ * 投影的坐标带原点平移，从 0 起钳会把出界判定全部算错。
+ */
 function mosaic(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-  const size = canvasSizeIn(ctx);
-  const rx = Math.max(0, Math.round(x));
-  const ry = Math.max(0, Math.round(y));
-  const rw = Math.min(Math.round(w), size.w - rx);
-  const rh = Math.min(Math.round(h), size.h - ry);
+  const vp = viewportIn(ctx);
+  const n = normRect(x, y, w, h);
+  const rx = Math.max(Math.round(n.x), Math.ceil(vp.x0));
+  const ry = Math.max(Math.round(n.y), Math.ceil(vp.y0));
+  const rw = Math.min(Math.round(n.x + n.w), Math.floor(vp.x1)) - rx;
+  const rh = Math.min(Math.round(n.y + n.h), Math.floor(vp.y1)) - ry;
   if (rw < 1 || rh < 1) return;
 
   const blockTarget = Math.min(40, Math.max(6, Math.round(Math.min(rw, rh) / 14)));
@@ -378,11 +397,11 @@ function mosaicBrush(ctx: CanvasRenderingContext2D, points: Point[], radius: num
     if (p.x + r > maxX) maxX = p.x + r;
     if (p.y + r > maxY) maxY = p.y + r;
   }
-  const size = canvasSizeIn(ctx);
-  const rx = Math.max(0, Math.floor(minX));
-  const ry = Math.max(0, Math.floor(minY));
-  const rw = Math.min(size.w, Math.ceil(maxX)) - rx;
-  const rh = Math.min(size.h, Math.ceil(maxY)) - ry;
+  const vp = viewportIn(ctx);
+  const rx = Math.max(Math.floor(minX), Math.ceil(vp.x0));
+  const ry = Math.max(Math.floor(minY), Math.ceil(vp.y0));
+  const rw = Math.min(Math.ceil(maxX), Math.floor(vp.x1)) - rx;
+  const rh = Math.min(Math.ceil(maxY), Math.floor(vp.y1)) - ry;
   if (rw < 1 || rh < 1) return;
 
   // 色块尺寸跟着笔刷半径走，比按区域尺寸推算更均匀

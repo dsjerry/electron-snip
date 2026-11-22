@@ -106,9 +106,11 @@ let editor: Editor | null = null;
 /**
  * 其余屏的已提交标注 / 拖画草稿（虚拟屏 DIP）。本屏只负责渲染落在本屏的
  * 部分（平移到本窗口坐标后画布自然裁掉出界的），编辑权始终在来源屏。
+ * **按来源屏分桶**：一条广播是来源屏的全量快照，三台显示器时 C 屏会先后
+ * 收到 A、B 两屏的消息 —— 单槽整体替换会让 B 的消息顶掉 A 的全部标注。
  */
-let remoteShapes: Shape[] = [];
-let remoteDraft: Shape | null = null;
+const remoteShapes = new Map<number, Shape[]>();
+const remoteDrafts = new Map<number, Shape | null>();
 /** 工具条尺寸缓存 —— 每帧读 layout 太贵，而它的尺寸基本不变 */
 let toolbarW = 0;
 let toolbarH = 0;
@@ -146,21 +148,25 @@ function paint(): void {
  * B 屏这半截就是靠这里补出来的（不广播的话 B 上永远什么都看不见）。
  */
 function drawRemote(): void {
-  if (!shot || (remoteShapes.length === 0 && !remoteDraft)) return;
+  if (!shot || remoteShapes.size === 0) return;
+  const shapes = [...remoteShapes.values()].flat();
+  const drafts = [...remoteDrafts.values()].filter((d): d is Shape => d !== null);
+  if (shapes.length === 0 && drafts.length === 0) return;
   ctx.save();
   ctx.translate(-shot.bounds.x, -shot.bounds.y);
-  for (const shape of remoteShapes) drawShape(ctx, shape);
+  for (const shape of shapes) drawShape(ctx, shape);
   // 草稿与编辑器同款画法：马赛克只画半透明预览，松手才像素化
-  if (remoteDraft && remoteDraft.type !== 'text') {
-    if (remoteDraft.type === 'mosaic') {
-      if (remoteDraft.mode === 'brush') {
-        drawDraftPath(ctx, remoteDraft.points, remoteDraft.radius);
+  for (const draft of drafts) {
+    if (draft.type === 'text') continue; // 文字的在途输入只属于来源屏的输入框
+    if (draft.type === 'mosaic') {
+      if (draft.mode === 'brush') {
+        drawDraftPath(ctx, draft.points, draft.radius);
       } else {
         // 选区 / 高斯模糊：半透明矩形预览
-        drawDraftRect(ctx, remoteDraft.x, remoteDraft.y, remoteDraft.w, remoteDraft.h);
+        drawDraftRect(ctx, draft.x, draft.y, draft.w, draft.h);
       }
     } else {
-      drawShape(ctx, remoteDraft);
+      drawShape(ctx, draft);
     }
   }
   ctx.restore();
@@ -635,8 +641,8 @@ async function main(): Promise<void> {
     // 窗口留着复用，但截图位图和解码后的位图都不能再占着内存
     payload = null;
     shot = null;
-    remoteShapes = [];
-    remoteDraft = null;
+    remoteShapes.clear();
+    remoteDrafts.clear();
     if (bg) {
       bg.close();
       bg = null;
@@ -650,15 +656,16 @@ async function main(): Promise<void> {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   });
 
-  // 其余屏的标注 / 草稿广播：只更新远端状态并重绘，不参与编辑
+  // 其余屏的标注 / 草稿广播：按来源屏分桶更新（一条消息是该屏的全量快照），
+  // 只重绘不参与编辑
   window.snip.overlay.remoteShapes(({ fromDisplayId, shapes }) => {
     if (!shot || fromDisplayId === shot.displayId) return;
-    remoteShapes = shapes;
+    remoteShapes.set(fromDisplayId, shapes);
     paint();
   });
   window.snip.overlay.remoteDraft(({ fromDisplayId, draft }) => {
     if (!shot || fromDisplayId === shot.displayId) return;
-    remoteDraft = draft;
+    remoteDrafts.set(fromDisplayId, draft);
     paint();
   });
 
