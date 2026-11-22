@@ -24,12 +24,12 @@ An Electron screenshot SDK: multi-display region selection (mixed DPI), window s
 ## 安装 · Install
 
 ```bash
-npm install github:dsjerry/electron-snip
+npm install electron-snip
 ```
 
-要求 Electron `>=43`（`peerDependencies`）。暂未发布到 npm，以 GitHub 依赖分发。
+要求 Electron `>=43`（`peerDependencies`）。也可以直接从 GitHub 安装：`npm install github:dsjerry/electron-snip`。
 
-Requires Electron `>=43` (peer dependency). Not yet published to npm; install from GitHub.
+Requires Electron `>=43` (peer dependency). Also installable directly from GitHub.
 
 ## 快速开始 · Quick start
 
