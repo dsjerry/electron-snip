@@ -3,6 +3,8 @@ import { log } from './log';
 
 /** 「系统设置 → 隐私与安全性 → 屏幕录制」的直达链接，旧版系统也能落到对应面板。 */
 const SCREEN_CAPTURE_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+/** 「辅助功能」面板直达链接（长图自动滚动注入滚轮事件需要它）。 */
+const ACCESSIBILITY_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
 
 const RESTART_LABEL = '我已授权，重启应用';
 const SETTINGS_LABEL = '打开系统设置';
@@ -51,6 +53,45 @@ export async function ensureScreenCaptureAccess(): Promise<boolean> {
   }
   await promptScreenPermission();
   return false;
+}
+
+/**
+ * macOS 自动滚动注入 CGEvent 滚轮事件，受 TCC「辅助功能」权限管（与屏幕
+ * 录制同一面板，但**授权立即生效、无需重启**）。未授权时弹引导框直达设置页。
+ * 非 macOS 恒放行。
+ */
+export async function ensureAccessibilityAccess(): Promise<boolean> {
+  if (process.platform !== 'darwin') return true;
+  const { macAccessibilityTrusted } = await import('../scroll/injector');
+  if (await macAccessibilityTrusted()) return true;
+  await promptAccessibilityPermission();
+  // 用户可能已经勾上（引导框期间或之后）：授权立即生效，重查一次
+  return macAccessibilityTrusted();
+}
+
+async function promptAccessibilityPermission(): Promise<void> {
+  if (prompting) return;
+  prompting = true;
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      message: '自动滚动需要「辅助功能」权限',
+      detail:
+        'macOS 要求授权后才能替你滚动窗口（注入滚轮事件）。\n\n' +
+        '请在「隐私与安全性 → 辅助功能」中勾选本应用，授权立即生效。\n' +
+        '若是从终端启动的开发实例，需要勾选的是启动它的终端应用（如 Warp / iTerm2 / Terminal）。',
+      buttons: [SETTINGS_LABEL, LATER_LABEL],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) {
+      await shell
+        .openExternal(ACCESSIBILITY_SETTINGS_URL)
+        .catch((err: unknown) => log.warn('[permission] 打开设置失败', err));
+    }
+  } finally {
+    prompting = false;
+  }
 }
 
 async function promptScreenPermission(): Promise<void> {

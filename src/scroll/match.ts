@@ -10,6 +10,12 @@ export const MATCH_THRESHOLD = 10;
 /** 探针高度：从累积缓冲取 N 行指纹，到新帧里定位「已见内容」的末尾 */
 export const PROBE_ROWS = 24;
 /**
+ * 相邻两帧低于它（每通道均值）视为「画面稳定」。抓稳后才拼接是自动滚动的
+ * 根基：注入一步滚轮后原生应用常带一小段平滑滚动动画，中间帧既对不准也
+ * 不该追加；手动模式同样受益 —— 运动帧本来就对不上，先挡掉省一次全帧搜索。
+ */
+export const STABLE_EPSILON = 2;
+/**
  * 探针与帧底部的间距（帧行数）。贴底的行往往是**静止**的：
  * 窗口底边框 / 状态栏，以及（区域≈整屏时）悬在区域内的控制条——
  * 拿静止行做探针会在每一帧的同一位置「完美匹配」，永远判无新内容。
@@ -26,6 +32,32 @@ export const BOTTOM_MARGIN = 200;
 export function probeStartFor(accHeight: number, frameHeight: number): number {
   const margin = Math.min(BOTTOM_MARGIN, Math.max(0, Math.floor((frameHeight - PROBE_ROWS) / 2)));
   return Math.max(0, accHeight - PROBE_ROWS - margin);
+}
+
+/**
+ * 相邻两帧的采样像素差（0~255，每通道均值）。横纵按 `sample` 隔行取点，
+ * 1080p 一帧约 8 万采样点，亚毫秒级 —— 每帧都要做，必须便宜。
+ * 返回值 ≤ STABLE_EPSILON 即认为画面稳定，可以拼接。
+ */
+export function frameDiff(
+  prev: Uint8ClampedArray,
+  cur: Uint8ClampedArray,
+  width: number,
+  height: number,
+  sample = 4,
+): number {
+  let sum = 0;
+  let n = 0;
+  const rowBytes = width * 4;
+  for (let y = 0; y < height; y += sample) {
+    const row = y * rowBytes;
+    for (let x = 0; x < width; x += sample) {
+      const i = row + x * 4;
+      sum += Math.abs(prev[i] - cur[i]) + Math.abs(prev[i + 1] - cur[i + 1]) + Math.abs(prev[i + 2] - cur[i + 2]);
+      n += 3;
+    }
+  }
+  return n > 0 ? sum / n : 0;
 }
 
 /** 单行指纹：64 列、每列横向取 3 像素均值的亮度。 */

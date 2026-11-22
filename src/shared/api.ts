@@ -16,6 +16,7 @@ import type {
   RecordEncodePayload,
   RecordFramePayload,
   RecordStatusPayload,
+  ScrollActionResult,
   ScrollActionPayload,
   ScrollFramePayload,
   ScrollMinimapPayload,
@@ -76,8 +77,8 @@ export interface SnipRendererApi {
   scroll: {
     /** 主进程推送的单帧画面（控制条） */
     frame(cb: (payload: ScrollFramePayload) => void): () => void;
-    /** 控制条动作：开始 / 滚动方式 / 速度 / 收场 / 导出 */
-    action(payload: ScrollActionPayload): Promise<void>;
+    /** 控制条动作：开始 / 滚动方式 / 速度 / 收场 / 导出；失败时 error 可直接展示 */
+    action(payload: ScrollActionPayload): Promise<ScrollActionResult>;
     /** 控制条 -> 主进程：小地图快照（经主进程转发给小地图窗口） */
     minimap(payload: ScrollMinimapPayload): Promise<void>;
     /** 小地图窗口收到的快照 */

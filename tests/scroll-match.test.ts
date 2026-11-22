@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { alignFrame, appendRange, MATCH_THRESHOLD, probeStartFor, rowSig, type AccView } from '../src/scroll/match';
+import {
+  alignFrame,
+  appendRange,
+  frameDiff,
+  MATCH_THRESHOLD,
+  probeStartFor,
+  rowSig,
+  STABLE_EPSILON,
+  type AccView,
+} from '../src/scroll/match';
 
 // 合成页面：每行在横向也有纹理（像真实网页的文字 / 色块），行与行的签名可区分
 const W = 64;
@@ -107,5 +116,41 @@ describe('长图拼接：不重复、不乱序', () => {
       expect(idx[i]).toBeGreaterThan(idx[i - 1]);
     }
     expect(new Set(idx).size).toBe(idx.length);
+  });
+});
+
+describe('frameDiff 稳定判定', () => {
+  const H = 40;
+  function frame(fill: (r: number, x: number) => [number, number, number]): Uint8ClampedArray {
+    const data = new Uint8ClampedArray(W * H * 4);
+    for (let r = 0; r < H; r++) {
+      for (let x = 0; x < W; x++) {
+        const [R, G, B] = fill(r, x);
+        const i = (r * W + x) * 4;
+        data[i] = R;
+        data[i + 1] = G;
+        data[i + 2] = B;
+        data[i + 3] = 255;
+      }
+    }
+    return data;
+  }
+
+  it('完全相同的帧差为 0（静止画面）', () => {
+    const a = frame((r, x) => [r * 5, x * 3, (r + x) & 255]);
+    expect(frameDiff(a, a, W, H)).toBe(0);
+  });
+
+  it('±1 以内的噪声低于稳定阈值（编码 / 合成的微小抖动）', () => {
+    const a = frame((r, x) => [r * 5, x * 3, (r + x) & 255]);
+    const b = frame((r, x) => [r * 5, x * 3, ((r + x) & 255) + ((r + x) % 2)]);
+    expect(frameDiff(a, b, W, H)).toBeLessThan(STABLE_EPSILON);
+  });
+
+  it('滚动一行的差远超阈值（运动帧要被挡下）', () => {
+    const page = makePage(200);
+    const prev = frameAt(page, 50, H);
+    const cur = frameAt(page, 51, H);
+    expect(frameDiff(prev, cur, W, H)).toBeGreaterThan(STABLE_EPSILON);
   });
 });

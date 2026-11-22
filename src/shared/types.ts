@@ -251,6 +251,12 @@ export interface ScrollActionPayload {
   speed?: ScrollSpeed;
 }
 
+/** 长图动作的回执：失败时 error 是可直接展示给用户的中文原因 */
+export interface ScrollActionResult {
+  ok: boolean;
+  error?: string;
+}
+
 /** 小地图快照：控制条合成的缩略图与当前视口框（缩略图像素行号） */
 export interface ScrollMinimapPayload {
   png: Uint8Array;

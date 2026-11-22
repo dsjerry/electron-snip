@@ -1,5 +1,14 @@
 import type { ScrollFramePayload, ScrollSpeed } from '../../shared/types';
-import { alignFrame, appendRange, MATCH_THRESHOLD, PROBE_ROWS, probeStartFor, rowSig } from '../../scroll/match';
+import {
+  alignFrame,
+  appendRange,
+  frameDiff,
+  MATCH_THRESHOLD,
+  PROBE_ROWS,
+  probeStartFor,
+  rowSig,
+  STABLE_EPSILON,
+} from '../../scroll/match';
 import { toClamped } from '../../shared/bytes';
 
 /**
@@ -30,9 +39,21 @@ const ROLE: 'bar' | 'minimap' = location.hash === '#minimap' ? 'minimap' : 'bar'
 const IDLE_HINT_FRAMES = 8;
 /** 探针连续失配这么多帧后提示用户放慢。失配的帧一律丢弃，不追加任何内容 */
 const DESYNC_HINT_FRAMES = 2;
+/**
+ * 连续运动帧的放行上限：滚动动画 / 手动快滚的中间帧先挡掉，但**长视频区**
+ * 永远不会稳定 —— 挡满这么多帧（250ms 一帧 ≈ 4 秒）后放行，交给对齐阈值
+ * 把关，否则视频区域一行都拼不出来。
+ */
+const MOTION_FALLBACK_FRAMES = 16;
 
 /** 当前探针失配的连续帧数（成功追加或完美对齐都会清零） */
 let desyncFrames = 0;
+/** 上一帧像素：稳定判定（frameDiff）用 */
+let prevStrip: Uint8ClampedArray | null = null;
+/** 连续运动帧计数；出现稳定帧即清零 */
+let motionRun = 0;
+/** 本帧是否因画面运动被挡下（提示用；放行兜底生效时不提示） */
+let motionGated = false;
 
 interface Accum {
   /** 缓冲始终由本地 new 创建（非共享内存），导出时 subarray 零拷贝喂 ImageData */
@@ -59,7 +80,8 @@ const HINT_DEFAULT = '滚动鼠标滚轮追加内容';
 const HINT_AUTO = '自动滚动中，移出选区即暂停';
 const HINT_BOTTOM = '已到底部，可复制 / 保存';
 const HINT_IDLE = '未检测到新内容，可点击复制 / 保存';
-const HINT_DESYNC = '滚动过快没对齐，已尝试自动续接；建议放慢速度';
+const HINT_MOTION = '正在等待画面稳定…';
+const HINT_DESYNC = '滚动过快没对上，请向上滚回一点再继续';
 
 /**
  * 控制条角色：拼接、状态栏、滚动方式 / 速度、动作按钮、帧订阅与小地图
@@ -93,7 +115,19 @@ function startBar(): void {
     desyncFrames = 0;
     autoStoppedByBottom = false;
     hintEl.textContent = mode === 'auto' ? HINT_AUTO : HINT_DEFAULT;
-    void window.snip.scroll.action({ kind: mode }).catch(() => {});
+    void window.snip.scroll
+      .action({ kind: mode })
+      .then((res) => {
+        // 自动滚动启动失败（辅助功能未授权 / 注入器不可用）：如实提示并退回手动，
+        // 别让按钮停在「自动」上空转
+        if (res && !res.ok && res.error) {
+          hintEl.textContent = res.error;
+          mode = 'manual';
+          modeManualBtn.classList.toggle('is-active', true);
+          modeAutoBtn.classList.toggle('is-active', false);
+        }
+      })
+      .catch(() => {});
   }
 
   modeManualBtn.addEventListener('click', () => setMode('manual'));
@@ -115,13 +149,8 @@ function startBar(): void {
     void window.snip.scroll.action({ kind: 'speed', speed }).catch(() => {});
   });
 
-  // 自动滚动依赖 Win32 滚轮注入（user32），mac 没有对应实现 —— 按钮藏掉，
-  // 不然点了只是空欢喜：提示写着「自动滚动中」却什么都不会滚
-  const isMac = /mac/i.test(navigator.platform);
-  if (isMac) {
-    modeAutoBtn.hidden = true;
-    speedBtn.hidden = true;
-  }
+  // mac 同样提供自动滚动（CGEvent 注入滚轮，见 scroll/injector.ts）；
+  // 权限缺失或注入器不可用时主进程回执错误，这里如实提示并退回手动。
 
   function updateStatus(): void {
     if (!acc) return;
@@ -129,13 +158,15 @@ function startBar(): void {
     hintEl.textContent =
       mode === 'auto' && bottomNotified
         ? HINT_BOTTOM
-        : desyncFrames >= DESYNC_HINT_FRAMES
-          ? HINT_DESYNC
-          : idleFrames >= IDLE_HINT_FRAMES
-            ? HINT_IDLE
-            : mode === 'auto'
-              ? HINT_AUTO
-              : HINT_DEFAULT;
+        : motionGated
+          ? HINT_MOTION
+          : desyncFrames >= DESYNC_HINT_FRAMES
+            ? HINT_DESYNC
+            : idleFrames >= IDLE_HINT_FRAMES
+              ? HINT_IDLE
+              : mode === 'auto'
+                ? HINT_AUTO
+                : HINT_DEFAULT;
   }
 
   function grow(): void {
@@ -276,10 +307,23 @@ function startBar(): void {
       viewTop = 0;
       viewHeight = height;
       idleFrames = 0;
+      prevStrip = strip;
       updateStatus();
       return;
     }
     if (width !== acc.width || height <= PROBE_ROWS + 4) return;
+    // 稳定门：滚动动画 / 快滚的中间帧直接挡下 —— 中间帧既对不准也不该追加。
+    // 连续运动超过 MOTION_FALLBACK_FRAMES 后放行（长视频区域永远不稳定，
+    // 不能一直挡），交给对齐阈值把关
+    const motion = prevStrip ? frameDiff(prevStrip, strip, width, height) : 0;
+    prevStrip = strip;
+    const stable = motion <= STABLE_EPSILON;
+    motionRun = stable ? 0 : motionRun + 1;
+    motionGated = !stable && motionRun <= MOTION_FALLBACK_FRAMES;
+    if (motionGated) {
+      updateStatus();
+      return;
+    }
     // 极小选区：累积高度不足一个探针，无法匹配（再往下签名访问会越界）
     if (acc.height < PROBE_ROWS) return;
 

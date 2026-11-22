@@ -3,12 +3,21 @@ import type { WebContents } from 'electron';
 import path from 'node:path';
 import { captureDisplays } from '../main/capture';
 import { forwardRendererLogs } from '../main/log';
+import { ensureAccessibilityAccess } from '../main/permission';
 import { pointInRect } from '../shared/selection';
 import { CH } from '../shared/channels';
 import { cropShot } from '../shared/crop';
 import { placeBar } from '../shared/placement';
 import { log } from '../main/log';
-import type { DisplayShot, Rect, ScrollActionPayload, ScrollMinimapPayload, ScrollSpeed } from '../shared/types';
+import { MAC_INJECTION_HINT, macAccessibilityTrusted, prepareAutoScroll, type ScrollInjector } from './injector';
+import type {
+  DisplayShot,
+  Rect,
+  ScrollActionResult,
+  ScrollActionPayload,
+  ScrollMinimapPayload,
+  ScrollSpeed,
+} from '../shared/types';
 
 /** 长图运行所需的路径：preload（用于控制条 / 小地图的 IPC）与渲染资源目录。 */
 export interface ScrollConfig {
@@ -191,109 +200,72 @@ export function stopScrollCapture(): void {
 // ------------------------------------------------------------ 自动滚动
 
 const AUTO_SCROLL_INTERVAL_MS = 500;
-/** 每个速度档对应的每次注入滚轮格数（一格 = WHEEL_DELTA 120） */
+/** Windows：每个速度档对应的每次注入滚轮格数（一格 = WHEEL_DELTA 120） */
 const AUTO_NOTCHES: Record<ScrollSpeed, number> = {
   slow: 1,
   normal: 3,
   fast: 6,
 };
-const WHEEL_DELTA = 120;
-const MOUSEEVENTF_WHEEL = 0x0800;
+/**
+ * macOS：每个速度档对应的滚动步长占视口高度的比例（CGEvent 像素单位，
+ * 与选区 DIP 高度直接相乘）。**必须 ≤ 0.5**：相邻两帧的重叠要容得下探针，
+ * 步长一旦超过半屏，拼接找不到锚点就整帧丢弃；这里按保守取值 ——
+ * 自动滚动求稳不求快，可靠性优先于吞吐。
+ */
+const AUTO_STEP_FRACTION: Record<ScrollSpeed, number> = {
+  slow: 0.3,
+  normal: 0.4,
+  fast: 0.5,
+};
+/** mac 最小步长（DIP）：选区太小时仍要能推动页面 */
+const AUTO_STEP_MIN_DIP = 24;
 
 let auto: {
   timer: NodeJS.Timeout;
-  /** 当前速度档的注入格数（speed 动作可热切换） */
-  notches: number;
+  injector: ScrollInjector;
+  /** 当前速度档的注入量：win32 = 滚轮格数，mac = DIP 像素步长（speed 可热切换） */
+  amount: number;
   /** 上一拍的光标位置 —— 判断是用户在动鼠标还是程序上次的落点 */
   lastCursor: { x: number; y: number } | null;
 } | null = null;
 /** 自动滚动速度（未启动时切换也记着，启动即生效） */
 let autoSpeed: ScrollSpeed = 'normal';
-/** koffi / user32 只准备一次（重复注册同名 struct 会冲突） */
-let injector: {
-  place(center: { x: number; y: number }): void;
-  wheel(notches: number): void;
-} | null = null;
-
-/**
- * 自动滚动的滚轮注入器：koffi 直调 user32 —— `SendInput` 注入向下滚轮，
- * 落在**光标之下**的真实窗口上（轮廓窗点击穿透、遮罩已收起，不会截胡）。
- */
-async function prepareInjector(): Promise<{
-  place(center: { x: number; y: number }): void;
-  wheel(notches: number): void;
-}> {
-  if (injector) return injector;
-  const koffi = (await import('koffi')).default;
-  const user32 = koffi.load('user32.dll');
-  const MOUSEINPUT = koffi.struct('MOUSEINPUT', {
-    dx: 'long',
-    dy: 'long',
-    // 用带符号 long 传负的 delta（位模式与 ULONG 一致）
-    mouseData: 'long',
-    dwFlags: 'uint32',
-    time: 'uint32',
-    dwExtraInfo: 'uintptr_t',
-  });
-  const INPUT = koffi.struct('INPUT', { type: 'uint32', mi: MOUSEINPUT });
-  const SendInput = user32.func('uint32 __stdcall SendInput(uint32, INPUT *, int)');
-  const SetCursorPos = user32.func('bool __stdcall SetCursorPos(int, int)');
-  const size = koffi.sizeof(INPUT);
-  injector = {
-    place: (center) => {
-      SetCursorPos(center.x, center.y);
-    },
-    wheel: (notches) => {
-      SendInput(
-        1,
-        {
-          type: 0,
-          mi: {
-            dx: 0,
-            dy: 0,
-            mouseData: -WHEEL_DELTA * notches,
-            dwFlags: MOUSEEVENTF_WHEEL,
-            time: 0,
-            dwExtraInfo: 0,
-          },
-        },
-        size,
-      );
-    },
-  };
-  return injector;
-}
 
 /**
  * 启动自动滚动。**只在启动时把光标放到选区中心一次** —— 之后绝不挪动
  * 光标：每拍检查光标位置，落在选区内（且不在控制条上）才注入滚轮。
  * 鼠标归用户管：移出选区 / 悬停控制条 = 自动暂停，移回来 = 自动恢复，
  * 不再出现「光标被拽回去、停不下来」的对抗。
+ *
+ * 返回动作回执：失败时 error 是给控制条提示的中文原因（辅助功能未授权等）。
  */
-export async function startAutoScroll(): Promise<boolean> {
-  // 注入器是 user32 专属 —— mac 上直接拒绝，别让 koffi.load 抛错
-  if (process.platform !== 'win32') return false;
-  if (auto || !state) return false;
+export async function startAutoScroll(): Promise<ScrollActionResult> {
+  if (auto || !state) return { ok: false, error: '自动滚动已在进行中' };
   const session = state;
-  let io: Awaited<ReturnType<typeof prepareInjector>>;
-  try {
-    io = await prepareInjector();
-  } catch (err) {
-    log.error('[scroll] 自动滚动不可用（koffi / user32 加载失败）', err);
-    return false;
+  // mac：注入受「辅助功能」权限管 —— 未授权先走引导框（授权立即生效），
+  // 引导后再查一次，仍无权限就如实回执，控制条提示并保持手动模式
+  if (process.platform === 'darwin' && !(await macAccessibilityTrusted())) {
+    await ensureAccessibilityAccess();
+    if (!(await macAccessibilityTrusted())) return { ok: false, error: MAC_INJECTION_HINT };
+  }
+  const prepared = await prepareAutoScroll();
+  if (!prepared.ok) {
+    log.warn(`[scroll] 自动滚动不可用：${prepared.reason}`);
+    return { ok: false, error: prepared.reason };
   }
   // await 期间会话可能已被取消（或被重新开始）：此时不能再启动，否则留下没人清理的定时器，
   // 并且 auto 残留会让之后的会话永远无法自动滚动
-  if (state !== session || auto) return false;
+  if (state !== session || auto) return { ok: false, error: '录制会话已结束' };
   const region = session.region;
   const bar = session.barBounds;
-  // 启动时把光标放到选区中心一次（SetCursorPos 吃物理像素），
-  // 之后光标完全归用户管 —— 注入与否只看光标当前在哪
-  const center = screen.dipToScreenPoint({
-    x: region.x + region.width / 2,
-    y: region.y + region.height / 2,
-  });
-  io.place(center);
+  // 启动时把光标放到选区中心一次，之后光标完全归用户管。
+  // 坐标系按平台分：win32 SetCursorPos 吃物理像素；mac CGEvent 吃全局点（DIP）
+  const centerDip = { x: region.x + region.width / 2, y: region.y + region.height / 2 };
+  prepared.injector.place(process.platform === 'darwin' ? centerDip : screen.dipToScreenPoint(centerDip));
+  const amount =
+    process.platform === 'win32'
+      ? AUTO_NOTCHES[autoSpeed]
+      : Math.max(AUTO_STEP_MIN_DIP, Math.floor(region.height * AUTO_STEP_FRACTION[autoSpeed]));
   const timer = setInterval(() => {
     if (!state || !auto) return;
     const cursor = screen.getCursorScreenPoint();
@@ -305,22 +277,28 @@ export async function startAutoScroll(): Promise<boolean> {
     // 光标在选区内且不在控制条上才注入 —— 悬停控制条时滚轮会打在
     // 控制条自己身上，按钮就没法点了
     if (!moved && pointInRect(region, cursor) && !pointInRect(bar, cursor)) {
-      io.wheel(auto.notches);
+      auto.injector.stepDown(auto.amount);
     }
   }, AUTO_SCROLL_INTERVAL_MS);
   auto = {
     timer,
-    notches: AUTO_NOTCHES[autoSpeed],
+    injector: prepared.injector,
+    amount,
     lastCursor: null,
   };
   log.info(`[scroll] 自动滚动已启动（${autoSpeed}）`);
-  return true;
+  return { ok: true };
 }
 
-/** 切换自动滚动速度（快/中/慢改变每次注入的滚轮格数）。 */
+/** 切换自动滚动速度（快/中/慢改变每次注入的步长，热生效）。 */
 export function setAutoScrollSpeed(speed: ScrollSpeed): void {
   autoSpeed = speed;
-  if (auto) auto.notches = AUTO_NOTCHES[speed];
+  if (auto && state) {
+    auto.amount =
+      process.platform === 'win32'
+        ? AUTO_NOTCHES[speed]
+        : Math.max(AUTO_STEP_MIN_DIP, Math.floor(state.region.height * AUTO_STEP_FRACTION[speed]));
+  }
 }
 
 export function stopAutoScroll(): void {
@@ -455,33 +433,33 @@ export interface ScrollFinish {
 /**
  * 控制条的动作分发。导出（复制 / 保存）与「编辑」需要结束截图会话、再由宿主决定去向，
  * 所以这里只负责收起长图窗口，然后把结果交给宿主回调。
+ * 返回回执：失败时 error 可直接展示（自动滚动权限 / 可用性问题）。
  */
-export function handleScrollAction(
+export async function handleScrollAction(
   _sender: WebContents,
   payload: ScrollActionPayload,
   hooks: { onFinish(finish: ScrollFinish): void | Promise<void>; onCancel(reason: string): void },
-): void {
+): Promise<ScrollActionResult> {
   switch (payload.kind) {
     case 'start':
       beginScrollCapture();
-      return;
+      return { ok: true };
     case 'auto':
-      void startAutoScroll();
-      return;
+      return startAutoScroll();
     case 'manual':
       stopAutoScroll();
-      return;
+      return { ok: true };
     case 'speed':
       setAutoScrollSpeed(payload.speed ?? 'normal');
-      return;
+      return { ok: true };
     case 'bottom':
       stopAutoScroll();
       log.info('[scroll] 已到底部，自动滚动停止');
-      return;
+      return { ok: true };
     case 'cancel':
       stopScrollCapture();
       hooks.onCancel('scroll-cancel');
-      return;
+      return { ok: true };
     case 'edit':
     case 'copy':
     case 'save': {
@@ -489,11 +467,11 @@ export function handleScrollAction(
       if (!png || png.byteLength === 0) {
         stopScrollCapture();
         hooks.onCancel('scroll-empty');
-        return;
+        return { ok: false, error: '没有可导出的内容' };
       }
       stopScrollCapture();
       void hooks.onFinish({ kind: payload.kind, png });
-      return;
+      return { ok: true };
     }
   }
 }
