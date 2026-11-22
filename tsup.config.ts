@@ -108,4 +108,15 @@ export default defineConfig([
     dts: true,
     external: ['electron', 'koffi'],
   },
+  {
+    // MP4 编码（子路径 electron-snip/record/mp4）：纯浏览器可用（WebCodecs），
+    // 录制控制条与宿主渲染端共用；与上面的 node 构建同目录，文件名不冲突
+    entry: { 'record/mp4': 'src/record/mp4.ts' },
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2022',
+    outDir: 'dist',
+    sourcemap: true,
+    dts: true,
+  },
 ]);

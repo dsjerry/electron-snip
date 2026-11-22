@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 录制新增 MP4 输出：控制条渲染进程用 WebCodecs 编 H.264，配零依赖的手写 MP4 封装器（faststart）；编码器以 `buildMp4` 从浏览器可用的 `electron-snip/record/mp4` 导出，供宿主自绘控制条复用。
 - 新增 `Snipper.pick(options)`：框选后不进工具条，确认选区直接移交宿主；配套 `release()` 结束移交。
 - 新增子路径：`electron-snip/ocr`（系统 OCR）、`electron-snip/scroll`（长图）、`electron-snip/record`（录制 GIF / PNG 序列）、`electron-snip/utils`、`electron-snip/annotations`。
 - 修复长图：自动滚动在注入器加载期间被取消时可能访问已清空的状态，并残留定时器阻断之后的自动滚动；注入器加载失败改为记录日志而非抛错。

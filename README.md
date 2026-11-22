@@ -13,13 +13,13 @@ An Electron screenshot SDK: multi-display region selection (mixed DPI), window s
 
 ## 功能状态 · Status
 
-| 能力                                 | 状态                                                                                      |
-| ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| 框选、跨屏、窗口吸附、标注           | 核心功能，macOS 手动测试通过（窗口吸附坐标已在双屏环境核实）；Windows 待验证              |
-| 钉成贴图、独立图片贴图（`pinImage`） | macOS 手动测试通过                                                                        |
-| 系统 OCR（`electron-snip/ocr`）      | 实现覆盖 macOS（Vision）与 Windows（WinRT）；两者均待实机验证                             |
-| 长图（`electron-snip/scroll`）       | 手动滚动待实机验证；Windows 自动滚动（koffi 注入）待验证                                  |
-| 录制（`electron-snip/record`）       | GIF / PNG 序列，已通过真实抓屏冒烟（macOS）；**录制中标注与点击涟漪尚未提供**；MP4 不支持 |
+| 能力                                 | 状态                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| 框选、跨屏、窗口吸附、标注           | 核心功能，macOS 手动测试通过（窗口吸附坐标已在双屏环境核实）；Windows 待验证        |
+| 钉成贴图、独立图片贴图（`pinImage`） | macOS 手动测试通过                                                                  |
+| 系统 OCR（`electron-snip/ocr`）      | 实现覆盖 macOS（Vision）与 Windows（WinRT）；两者均待实机验证                       |
+| 长图（`electron-snip/scroll`）       | 手动滚动待实机验证；Windows 自动滚动（koffi 注入）待验证                            |
+| 录制（`electron-snip/record`）       | GIF / MP4 / PNG 序列，已通过真实抓屏冒烟（macOS）；**录制中标注与点击涟漪尚未提供** |
 
 ## 安装 · Install
 
@@ -81,6 +81,7 @@ A complete runnable example is in [`examples/basic`](./examples/basic) (`npm run
 | `electron-snip/ocr`             | `recognizeImagePng(png)`，系统 OCR                                             | 主进程   |
 | `electron-snip/scroll`          | 长图：`startScrollCapture`、`installScroll` 等                                 | 主进程   |
 | `electron-snip/record`          | 录制：`startRecording`、`installRecord`、`buildGif` 等                         | 主进程   |
+| `electron-snip/record/mp4`      | `buildMp4`：H.264 编码 + MP4 封装（WebCodecs，零依赖）                         | 渲染进程 |
 
 ## API
 
@@ -153,15 +154,18 @@ installRecord(ipcMain);
 // startRecording(
 //   { shot: pick.shot, region: pick.region, format: 'gif', config: { preloadPath, rendererDir } },
 //   {
-//     onFinish(r) { /* r.gif（GIF 字节）或 r.pngs + r.delays（PNG 序列） */ },
+//     onFinish(r) { /* r.gif / r.mp4（完整字节），或 r.pngs + r.delays（PNG 序列） */ },
 //     onCancel(reason) {},
 //   },
 // );
 ```
 
+- `format: 'gif' | 'mp4' | 'png-sequence'`。MP4 由控制条渲染进程的 WebCodecs 编出 H.264
+  （内置零依赖封装器，moov 在前可直接流式播放），环境没有可用编码器时按失败收场、不留半成品。
 - 帧率默认 10fps，最长 5 分钟（按录制时间计，暂停不计入），帧内存超过 384MB 自动停止。
 - 相同画面自动合并，静止时长时间录制也不会占用大量内存。
 - 只支持单屏选区。`cancelRecording()`、`isRecording()` 可用于外部收场与查询。
+- 自绘控制条的宿主可直接复用编码器：`import { buildMp4 } from 'electron-snip/record/mp4'`（浏览器可用）。
 
 ### OCR · `electron-snip/ocr`
 
@@ -208,7 +212,7 @@ npm run lint
 npm run format:check
 npm test                    # 纯逻辑（node）+ DOM / canvas（Chromium）
 npm run smoke               # 用 Electron 加载遮罩与贴图产物（需要显示器）
-npm run smoke:record        # 真实抓屏录制 2 秒，校验 GIF 与取消路径（需要屏幕录制权限）
+npm run smoke:record        # 真实抓屏录制 2 秒，校验 GIF / MP4 与取消路径（需要屏幕录制权限）
 npm run example             # 运行最小示例
 ```
 
@@ -217,7 +221,6 @@ npm run example             # 运行最小示例
 ## 路线图与限制 · Roadmap and limitations
 
 - 录制中的标注（录制时画箭头、框、文字，并合成到对应帧上）与点击涟漪尚未提供。
-- 录制不支持 MP4 输出。
 - 长图与录制只支持单屏选区。
 - 尚未发布到 npm。
 

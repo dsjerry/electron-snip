@@ -1,4 +1,4 @@
-// 冒烟测试：真实抓屏录制，检查 GIF 产物、取消路径与连续会话。
+// 冒烟测试：真实抓屏录制，检查 GIF / MP4 产物、取消路径与连续会话。
 // 需要本机有显示器并已授予屏幕录制权限（macOS）。运行：npm run smoke:record
 const { app, screen, ipcMain } = require('electron');
 const { writeFileSync } = require('node:fs');
@@ -10,6 +10,7 @@ const record = require(path.join(dist, 'record', 'record.cjs'));
 const { captureDisplays } = require(path.join(dist, 'index.cjs'));
 
 const out = path.join(os.tmpdir(), 'electron-snip-smoke.gif');
+const outMp4 = path.join(os.tmpdir(), 'electron-snip-smoke.mp4');
 const checks = [];
 const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, detail });
 const within = (promise, ms, fallback) =>
@@ -66,6 +67,33 @@ app.whenReady().then(async () => {
   // 3) 连续会话：取消之后立刻再开一次，必须仍能正常启动并取消
   const second = await cancelOnce();
   ok('连续会话：第二次仍能启动并取消', second === 'record-cancel', second);
+
+  // 4) MP4：控制条渲染进程用 WebCodecs 编出 H.264，主进程拿到完整 MP4 字节
+  const mp4Finished = new Promise((resolve) => {
+    const started = record.startRecording(
+      { shot, region, format: 'mp4', config, maxDurationMs: 2000 },
+      { onFinish: (r) => resolve({ kind: 'finish', r }), onCancel: (reason) => resolve({ kind: 'cancel', reason }) },
+    );
+    ok('MP4 开始录制', started);
+  });
+  const mp4Result = await within(mp4Finished, 30000, { kind: 'timeout' });
+  ok('MP4 录制完成回调', mp4Result.kind === 'finish', mp4Result.kind === 'cancel' ? mp4Result.reason : mp4Result.kind);
+  if (mp4Result.kind === 'finish') {
+    const r = mp4Result.r;
+    const mp4 = Buffer.from(r.mp4);
+    writeFileSync(outMp4, mp4);
+    // ftyp 盒紧跟盒长度之后，moov 在 mdat 之前（faststart）也能从前 64 字节里看到
+    ok('产物以 ftyp 开头', mp4.subarray(4, 8).toString('ascii') === 'ftyp', mp4.subarray(0, 16).toString('ascii'));
+    ok(
+      'moov 在 mdat 之前',
+      mp4.indexOf('moov') > 0 && (mp4.indexOf('mdat') < 0 || mp4.indexOf('moov') < mp4.indexOf('mdat')),
+    );
+    ok('含 avc1 采样条目', mp4.indexOf('avc1') > 0);
+    ok('MP4 帧数大于 0', r.frames > 0, `frames=${r.frames}`);
+    ok('MP4 时长约 2 秒', r.durationMs >= 1500 && r.durationMs <= 3500, `durationMs=${Math.round(r.durationMs)}`);
+    ok('MP4 尺寸与选区一致', r.width === 320 && r.height === 200, `${r.width}x${r.height}`);
+    console.log(`MP4 已写入 ${outMp4}（${mp4.length} 字节）`);
+  }
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'} ${c.name}${c.detail ? `（${c.detail}）` : ''}`);

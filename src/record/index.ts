@@ -1,5 +1,7 @@
-// 录制（子路径 electron-snip/record）：单屏录制，输出 GIF 或 PNG 序列。
+// 录制（子路径 electron-snip/record）：单屏录制，输出 GIF / MP4 / PNG 序列。
 // 控制条页面随包发布在 renderer/record.html；动作与帧全部经 preload 的 window.snip.record 通信。
+// 注意：本子路径是主进程模块 —— MP4 编码（buildMp4）依赖 WebCodecs，走浏览器可用的
+// electron-snip/record/mp4，宿主渲染端复用它给自绘控制条编码。
 import type { IpcMain } from 'electron';
 import { CH } from '../shared/channels';
 import type { RecordActionPayload, RecordDonePayload } from '../shared/types';

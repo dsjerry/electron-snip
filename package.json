@@ -39,6 +39,10 @@
       "types": "./dist/record/record.d.ts",
       "import": "./dist/record/record.js",
       "require": "./dist/record/record.cjs"
+    },
+    "./record/mp4": {
+      "types": "./dist/record/mp4.d.ts",
+      "import": "./dist/record/mp4.js"
     }
   },
   "files": [
@@ -102,6 +106,9 @@
       ],
       "record": [
         "./dist/record/record.d.ts"
+      ],
+      "record/mp4": [
+        "./dist/record/mp4.d.ts"
       ]
     }
   },

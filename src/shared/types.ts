@@ -258,8 +258,8 @@ export interface ScrollMinimapPayload {
   viewHeight: number;
 }
 
-/** 录制输出格式：GIF 动图，或每帧一张 PNG（由宿主决定如何落盘） */
-export type RecordFormat = 'gif' | 'png-sequence';
+/** 录制输出格式：GIF 动图、H.264 MP4 视频，或每帧一张 PNG（由宿主决定如何落盘） */
+export type RecordFormat = 'gif' | 'mp4' | 'png-sequence';
 
 /** 控制条动作：暂停 / 继续 / 停止（导出）/ 取消（丢弃） */
 export interface RecordActionPayload {
@@ -307,6 +307,8 @@ export type RecordDonePayload =
       frames: number;
       durationMs: number;
       gif?: Uint8Array;
+      /** mp4：完整 MP4 文件字节（H.264 视频，faststart：moov 在前，可直接流式播放） */
+      mp4?: Uint8Array;
       /** png-sequence：按时间顺序的 PNG 字节；delays[i] 为第 i 张的显示时长（毫秒） */
       pngs?: Uint8Array[];
       delays?: number[];

@@ -19,7 +19,7 @@ import { placeBar } from '../shared/placement';
 import { elapsedMs } from './timeline';
 
 /**
- * 录制（子路径 electron-snip/record）：单屏录制选区，输出 GIF 或 PNG 序列。
+ * 录制（子路径 electron-snip/record）：单屏录制选区，输出 GIF / MP4 / PNG 序列。
  *
  * 分工：主进程只管节奏与时间 —— 固定间隔抓屏、按选区裁剪、扣除暂停时长后打上时刻，
  * 然后把帧交给控制条渲染进程。去重、量化与编码都在渲染进程做，避免卡住主进程的事件循环。
@@ -58,6 +58,8 @@ export interface RecordFinish {
   durationMs: number;
   /** format 为 gif 时：完整 GIF 字节 */
   gif?: Uint8Array;
+  /** format 为 mp4 时：完整 MP4 文件字节（H.264，faststart） */
+  mp4?: Uint8Array;
   /** format 为 png-sequence 时：按时间顺序的 PNG 字节 */
   pngs?: Uint8Array[];
   /** format 为 png-sequence 时：每张 PNG 的显示时长（毫秒） */
@@ -324,6 +326,7 @@ export function finishRecording(sender: WebContents, payload: RecordDonePayload)
     frames: payload.frames,
     durationMs: payload.durationMs,
     gif: payload.gif,
+    mp4: payload.mp4,
     pngs: payload.pngs,
     delays: payload.delays,
   };

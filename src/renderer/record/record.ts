@@ -1,4 +1,5 @@
 import { buildGif, type StoredFrame } from '../../record/pipeline';
+import { buildMp4 } from '../../record/mp4';
 import { frameDurations } from '../../record/timeline';
 import type { RecordBootPayload, RecordFramePayload, RecordStatusPayload } from '../../shared/types';
 
@@ -91,6 +92,12 @@ async function encode(endAt: number): Promise<void> {
     if (format === 'gif') {
       const gif = buildGif(width, height, frames, endAt);
       await window.snip.record.done({ ok: true, format, width, height, frames: frames.length, durationMs: endAt, gif });
+      return;
+    }
+    if (format === 'mp4') {
+      // WebCodecs H.264 编码：环境不支持时编码器会抛错，走统一的失败回传
+      const mp4 = await buildMp4(width, height, frames, endAt);
+      await window.snip.record.done({ ok: true, format, width, height, frames: frames.length, durationMs: endAt, mp4 });
       return;
     }
     const pngs: Uint8Array[] = [];
